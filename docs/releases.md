@@ -10,7 +10,8 @@ bun run release --check     # validate the builder without publishing
 
 The image repositories and the GitHub repository that releases publish to come from
 `packages/shared/src/publishing.ts`. Installations also update from there, so a fork
-changes those two lines to release and update from its own account.
+changes those two lines to release and update from its own account. See
+[Running your own fork](forks.md).
 
 This branch publishes `ghcr.io/lucasmeijer/agents-in-the-cloud:latest` and
 immutable commit/staging tags. `--stable` also advances its `stable` tag after

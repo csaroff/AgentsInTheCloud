@@ -15,8 +15,11 @@ export async function readStoredUpdateChannel(): Promise<UpdateChannel | undefin
   return updateChannel;
 }
 
-export async function writeStoredAppRepository(repository: string): Promise<void> {
-  await updateJsonSettings(settingsPath(), (settings) => { settings.appRepository = repository; });
+export interface Repositories { appRepository: string; systemRepository: string }
+
+/** System and the installer read these to update from wherever this app's checkout publishes. */
+export async function writeStoredRepositories(repositories: Repositories): Promise<void> {
+  await updateJsonSettings(settingsPath(), (settings) => { Object.assign(settings, repositories); });
 }
 
 export async function writeStoredUpdateChannel(channel: UpdateChannel): Promise<void> {

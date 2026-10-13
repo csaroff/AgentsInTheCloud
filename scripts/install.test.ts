@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 const installer = await Bun.file(new URL("./install.sh", import.meta.url)).text();
 
-function run(options: { systemState?: "restarting" | "exited"; nonRoot?: boolean; denySudo?: boolean; mac?: boolean; wsl?: boolean; installed?: boolean; old?: boolean; legacyAtelier?: boolean; legacyVolumeOnly?: boolean; legacyPreSystem?: boolean; legacyDownloadFails?: boolean; legacyDelegateFails?: boolean; pullFails?: boolean; pullDenied?: boolean; appFails?: boolean; retryUpdateRequest?: boolean; rejectUpdateRequest?: boolean; pendingHealth?: boolean; missingFilesystem?: boolean; loadable?: boolean; uninstallAnswer?: string; uninstallFails?: boolean; uninstallRequestFails?: boolean; inventoryFails?: boolean; volumeOnly?: boolean; volumeRemovalFails?: boolean; initiallyStopped?: boolean; channel?: string } = {}, args: string[] = []) {
+function run(options: { systemState?: "restarting" | "exited"; nonRoot?: boolean; denySudo?: boolean; mac?: boolean; wsl?: boolean; installed?: boolean; old?: boolean; legacyAtelier?: boolean; legacyVolumeOnly?: boolean; legacyPreSystem?: boolean; legacyDownloadFails?: boolean; legacyDelegateFails?: boolean; pullFails?: boolean; pullDenied?: boolean; appFails?: boolean; retryUpdateRequest?: boolean; rejectUpdateRequest?: boolean; pendingHealth?: boolean; missingFilesystem?: boolean; loadable?: boolean; uninstallAnswer?: string; uninstallFails?: boolean; uninstallRequestFails?: boolean; inventoryFails?: boolean; volumeOnly?: boolean; volumeRemovalFails?: boolean; initiallyStopped?: boolean; channel?: string; systemRepository?: string } = {}, args: string[] = []) {
   const logPath = `/tmp/agents-in-the-cloud-install-test-${crypto.randomUUID()}.log`;
   const mock = `
 mktemp() { if [[ "$*" == *atelier-legacy-uninstall* ]]; then echo "${logPath}.legacy"; else echo "${logPath}"; fi; }
@@ -77,7 +77,7 @@ docker() {
         printf '${options.appFails ? 'failed\\nApp health failed\\n\\n\\n\\n\\nApp exited' : 'ready\\nAgentsInTheCloud is ready\\n\\nhttps://app.example/custom-path\\n\\n\\n'}\\n'
         return
       fi ;;
-    'run --rm') printf '%s\n' ${JSON.stringify(options.channel ?? "latest")}; return 0 ;;
+    'run --rm') printf '%s %s\n' ${JSON.stringify(options.channel ?? "latest")} ${JSON.stringify(options.systemRepository ?? "")}; return 0 ;;
     'logs --tail') echo 'supervisor startup failed: io.weight unavailable';;
     'inspect --format') if [[ "$*" == *'{{.Image}}'* ]]; then echo sha256:installed-system; elif [[ "$*" == *State.Status* ]]; then echo ${options.systemState ?? 'running'}; elif [[ "$*" == *3080/tcp* ]]; then echo 55123; else echo ${options.initiallyStopped ? "false" : "true"}; fi ;;
   esac
@@ -125,6 +125,16 @@ test("updates follow the installation's Update channel for System", () => {
     expect(result.output).toContain("DOCKER run --rm --mount source=agents-in-the-cloud-system,target=/data,readonly --entrypoint bun sha256:installed-system -e");
     expect(result.output).toContain(`DOCKER pull ghcr.io/lucasmeijer/agents-in-the-cloud-system:${channel}`);
   }
+});
+
+test("updates follow the System repository the app recorded", () => {
+  const result = run({ installed: true, channel: "stable", systemRepository: "ghcr.io/someone/agents-in-the-cloud-system" });
+  expect(result.status).toBe(0);
+  expect(result.output).toContain("DOCKER pull ghcr.io/someone/agents-in-the-cloud-system:stable");
+  const malformed = run({ installed: true, systemRepository: "--help" });
+  expect(malformed.status).not.toBe(0);
+  expect(malformed.output).toContain("Unknown System repository: --help");
+  expect(malformed.output).not.toContain("DOCKER pull");
 });
 
 test("an explicit System image wins over the channel, and an unknown channel stops before changes", () => {
