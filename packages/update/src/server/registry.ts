@@ -3,8 +3,6 @@ import { parseSystemVersion, requiredSystemVersionLabel } from "@agents-in-the-c
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
-export const repository = "lucasmeijer/agents-in-the-cloud";
-
 export type HttpFetcher = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 /** requiredSystemVersion is 0 for images from before System versions existed. */
@@ -115,8 +113,10 @@ async function fetchRegistryImage(base: string, version: string, fetcher: HttpFe
   return { digest, layers: manifest.layers, labels: config.config?.Labels ?? {} };
 }
 
-export async function fetchChannelImageMetadata(channel: UpdateChannel, fetcher: HttpFetcher = fetch, platform = { os: "linux", architecture: currentArch() }): Promise<ImageMetadata> {
-  const image = await fetchRegistryImage(`https://ghcr.io/v2/${repository}`, channel, fetcher, platform);
+/** repository is a full name like ghcr.io/lucasmeijer/agents-in-the-cloud. */
+export async function fetchChannelImageMetadata(repository: string, channel: UpdateChannel, fetcher: HttpFetcher = fetch, platform = { os: "linux", architecture: currentArch() }): Promise<ImageMetadata> {
+  const [registry, ...name] = repository.split("/");
+  const image = await fetchRegistryImage(`https://${registry}/v2/${name.join("/")}`, channel, fetcher, platform);
   return { digest: image.digest, revision: image.labels["org.opencontainers.image.revision"], requiredSystemVersion: parseSystemVersion(image.labels[requiredSystemVersionLabel]) };
 }
 

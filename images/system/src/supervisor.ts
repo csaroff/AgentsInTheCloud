@@ -7,6 +7,7 @@ import { startLocalIngress } from "./local-ingress.ts";
 import { installationStatus, type Activity } from "./installation-status.ts";
 import { PullProgress } from "./pull-progress.ts";
 import { prepareChannelUpdate } from "./channel-update.ts";
+import { appRepository, upstreamAppRepository } from "../../../packages/shared/src/app-image.ts";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { installWorkspaceFirewall, resolverAddresses, setPrivateNetworkAccess } from "./firewall.ts";
@@ -30,7 +31,7 @@ const { values } = parseArgs({
     "access-mode": { type: "string", default: "tailscale" },
     "app-image": {
       type: "string",
-      default: "ghcr.io/lucasmeijer/agents-in-the-cloud:latest",
+      default: `${upstreamAppRepository}:latest`,
     },
   },
   strict: true,
@@ -267,7 +268,7 @@ async function replace(request: Replacement) {
     await configureRoutes(3001);
     stage("Preparing AgentsInTheCloud");
     const reference = "channel" in request
-      ? await prepareChannelUpdate("/data/app/update.json", {
+      ? await prepareChannelUpdate("/data/app/update.json", appRepository(JSON.parse(await docker("image", "inspect", "--format", "{{json .Config.Labels}}", candidate))), {
           pull: (reference) => pullImage(reference, "Downloading AgentsInTheCloud from the selected channel"),
           inspect: (reference) => docker("image", "inspect", "--format", "{{.Id}}", reference),
         })

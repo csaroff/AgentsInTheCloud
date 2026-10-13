@@ -9,7 +9,8 @@ const settingsSchema = Type.Object({
   releaseChannel: Type.Optional(Type.Union([Type.Literal("stable"), Type.Literal("latest")])),
 });
 
-export async function prepareChannelUpdate(settingsPath: string, images: {
+/** repository comes from the running app image, so installations of a fork keep updating from the fork. */
+export async function prepareChannelUpdate(settingsPath: string, repository: string, images: {
   pull: (reference: string) => Promise<void>;
   inspect: (reference: string) => Promise<string>;
 }): Promise<string> {
@@ -20,7 +21,7 @@ export async function prepareChannelUpdate(settingsPath: string, images: {
   const settings: unknown = text === undefined ? {} : JSON.parse(text);
   if (!Value.Check(settingsSchema, settings)) throw new Error("Invalid update settings");
   const updateChannel = settings.releaseChannel ?? "latest";
-  const reference = `ghcr.io/lucasmeijer/agents-in-the-cloud:${updateChannel}`;
+  const reference = `${repository}:${updateChannel}`;
   // Always refresh the mutable channel tag, even if Docker already has it.
   // Pin the result before dependencies are prepared or the app is stopped.
   await images.pull(reference);

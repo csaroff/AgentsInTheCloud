@@ -1,3 +1,4 @@
+import { upstreamAppRepository } from "@agents-in-the-cloud/shared/app-image";
 import { describe, expect, test } from "bun:test";
 import { parseWwwAuthenticate, selectManifestFromIndex, fetchChannelImageMetadata, resolveImage } from "../../src/server/registry.ts";
 describe("registry helpers", () => {
@@ -22,7 +23,7 @@ describe("registry helpers", () => {
       if (url.endsWith("/blobs/sha256:config")) return Response.json({ os: "linux", architecture: process.arch === "arm64" ? "arm64" : "amd64", config: { Labels: { "org.opencontainers.image.revision": "new", "org.agents-in-the-cloud.required-system-version": "2" } } });
       throw new Error(`unexpected fetch ${url}`);
     };
-    await expect(fetchChannelImageMetadata("stable", fetcher)).resolves.toEqual({ digest: "sha256:manifest", revision: "new", requiredSystemVersion: 2 });
+    await expect(fetchChannelImageMetadata(upstreamAppRepository, "stable", fetcher)).resolves.toEqual({ digest: "sha256:manifest", revision: "new", requiredSystemVersion: 2 });
   });
 
   test("accepts null optional config label fields", async () => {
@@ -33,7 +34,7 @@ describe("registry helpers", () => {
         if (url.endsWith("/blobs/sha256:config")) return Response.json({ os: "linux", architecture: process.arch === "arm64" ? "arm64" : "amd64", config });
         throw new Error(`unexpected fetch ${url}`);
       };
-      await expect(fetchChannelImageMetadata("stable", fetcher)).resolves.toEqual({
+      await expect(fetchChannelImageMetadata(upstreamAppRepository, "stable", fetcher)).resolves.toEqual({
         digest: "sha256:manifest",
         revision: undefined,
         requiredSystemVersion: 0,
@@ -51,7 +52,7 @@ describe("registry helpers", () => {
       throw new Error(`unexpected fetch ${url}`);
     };
 
-    await expect(fetchChannelImageMetadata("stable", fetcher)).resolves.toEqual({
+    await expect(fetchChannelImageMetadata(upstreamAppRepository, "stable", fetcher)).resolves.toEqual({
       digest: "sha256:platform",
       revision: "indexed",
       requiredSystemVersion: 0,
@@ -66,17 +67,17 @@ describe("registry helpers", () => {
       throw new Error(`unexpected fetch ${url}`);
     };
 
-    await expect(fetchChannelImageMetadata("stable", fetcher)).rejects.toThrow();
+    await expect(fetchChannelImageMetadata(upstreamAppRepository, "stable", fetcher)).rejects.toThrow();
   });
 
   test("rejects malformed registry manifests and config labels", async () => {
     const malformedManifest = async () => Response.json({ config: { digest: 42 } });
-    await expect(fetchChannelImageMetadata("stable", malformedManifest)).rejects.toThrow();
+    await expect(fetchChannelImageMetadata(upstreamAppRepository, "stable", malformedManifest)).rejects.toThrow();
 
     const malformedIndex = async () => Response.json({
       manifests: [{ digest: 42, platform: { os: "linux", architecture: "amd64" } }],
     });
-    await expect(fetchChannelImageMetadata("stable", malformedIndex)).rejects.toThrow();
+    await expect(fetchChannelImageMetadata(upstreamAppRepository, "stable", malformedIndex)).rejects.toThrow();
 
     const malformedConfig = async (input: URL | RequestInfo) => {
       const url = String(input);
@@ -84,7 +85,7 @@ describe("registry helpers", () => {
       if (url.endsWith("/blobs/sha256:config")) return Response.json({ os: "linux", architecture: process.arch === "arm64" ? "arm64" : "amd64", config: { Labels: { revision: 42 } } });
       throw new Error(`unexpected fetch ${url}`);
     };
-    await expect(fetchChannelImageMetadata("stable", malformedConfig)).rejects.toThrow();
+    await expect(fetchChannelImageMetadata(upstreamAppRepository, "stable", malformedConfig)).rejects.toThrow();
   });
 
   test("selects current linux platform manifest", () => {
@@ -147,6 +148,6 @@ test("latest discovery only requests the new product's latest tag", async () => 
     }
     throw new Error(`unexpected fetch ${url}`);
   };
-  await expect(fetchChannelImageMetadata("latest", fetcher)).resolves.toEqual({ digest: "sha256:latest-manifest", revision: "latest-revision", requiredSystemVersion: 0 });
+  await expect(fetchChannelImageMetadata(upstreamAppRepository, "latest", fetcher)).resolves.toEqual({ digest: "sha256:latest-manifest", revision: "latest-revision", requiredSystemVersion: 0 });
   expect(calls).toHaveLength(2);
 });

@@ -79,7 +79,7 @@ test("runtime detection only enables System's app container", async () => {
     const runtime = await detectSelfUpdateRuntime(async (args) => ({ code: 0, stderr: "", stdout: JSON.stringify(args[0] === "inspect"
       ? [{ Image: "sha256:app", Config: { Labels: { "agents-in-the-cloud.role": managed ? "app" : "workspace" } } }]
       : [{ Id: "sha256:app", RepoDigests: [app], Config: { Labels: { "org.opencontainers.image.revision": "revision" } } }]) }), async () => "container");
-    if (managed) expect(runtime).toEqual({ currentRevision: "revision", currentDigest: app.split("@")[1] });
+    if (managed) expect(runtime).toEqual({ repository: "ghcr.io/lucasmeijer/agents-in-the-cloud", currentRevision: "revision", currentDigest: app.split("@")[1] });
     else expect(runtime).toBeUndefined();
   }
 });
@@ -167,4 +167,12 @@ test("preparation stops before downloading when either prune fails", async () =>
 test("prune failure without stderr still explains the failed operation", async () => {
   await expect(pruneUnusedAgentsInTheCloudImages(async () => ({ code: 1, stdout: "", stderr: "" })))
     .rejects.toThrow("Could not prune unused AgentsInTheCloud images");
+});
+
+test("a fork's app image updates from the repository it was built for", async () => {
+  const fork = `ghcr.io/someone/agents-in-the-cloud-fork@sha256:${"d".repeat(64)}`;
+  const runtime = await detectSelfUpdateRuntime(async (args) => ({ code: 0, stderr: "", stdout: JSON.stringify(args[0] === "inspect"
+    ? [{ Image: "sha256:fork", Config: { Labels: { "agents-in-the-cloud.role": "app" } } }]
+    : [{ Id: "sha256:fork", RepoDigests: [fork], Config: { Labels: { "org.agents-in-the-cloud.app-repository": "ghcr.io/someone/agents-in-the-cloud-fork" } } }]) }), async () => "container");
+  expect(runtime).toEqual({ repository: "ghcr.io/someone/agents-in-the-cloud-fork", currentDigest: fork.split("@")[1] });
 });

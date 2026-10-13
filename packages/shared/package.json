@@ -8,7 +8,8 @@
     "./http": "./src/http.ts",
     "./theme": "./src/theme-setting.ts",
     "./file-metadata": "./src/file-metadata.ts",
-    "./system-version": "./src/system-version.ts"
+    "./system-version": "./src/system-version.ts",
+    "./app-image": "./src/app-image.ts"
   },
   "dependencies": {
     "@agents-in-the-cloud/core": "workspace:*",

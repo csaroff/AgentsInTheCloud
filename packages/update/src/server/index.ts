@@ -13,7 +13,7 @@ import { requiredSystemVersion } from "@agents-in-the-cloud/shared/system-versio
 import { errorMessage, escapeHtml, turboStream, turboStreamResponse, type SettingsContribution, type WorkspaceModule, type WorkspaceServerModuleContext } from "@agents-in-the-cloud/shared";
 import { isUpdateChannel, type UpdateChannel } from "./update-channel.ts";
 import { detectSelfUpdateRuntime, prepareUpdate, type PreparedUpdate, type PullProgress, type SelfUpdateRuntime } from "./docker.ts";
-import { fetchChannelImageMetadata, repository, type ImageMetadata } from "./registry.ts";
+import { fetchChannelImageMetadata, type ImageMetadata } from "./registry.ts";
 import { readStoredUpdateChannel, writeStoredUpdateChannel } from "./settings-store.ts";
 import { readSystemVersion, requestSupervisorUpdate } from "./supervisor.ts";
 
@@ -44,7 +44,7 @@ export interface UpdateManagerDeps {
   readChannel?: () => Promise<UpdateChannel | undefined>;
   writeChannel?: (channel: UpdateChannel) => Promise<void>;
   detectRuntime?: () => Promise<SelfUpdateRuntime | undefined>;
-  fetchMetadata?: (channel: UpdateChannel) => Promise<ImageMetadata>;
+  fetchMetadata?: (repository: string, channel: UpdateChannel) => Promise<ImageMetadata>;
   prepareUpdate?: (reference: string, onProgress: (progress: PullProgress) => void) => Promise<PreparedUpdate>;
   requestUpdate?: (imageId: string) => Promise<void>;
   readSystemVersion?: () => Promise<number>;
@@ -118,7 +118,7 @@ export class UpdateManager {
     if (this.state === "idle" || this.state === "failed") this.setState("checking");
     let target: ImageMetadata;
     try {
-      target = await (this.deps.fetchMetadata ?? fetchChannelImageMetadata)(channel);
+      target = await (this.deps.fetchMetadata ?? fetchChannelImageMetadata)(this.runtime.repository, channel);
     } catch (error) {
       // A superseded channel's failures are as stale as its successful responses.
       if (generation !== this.channelGeneration || this.pullPromise || this.prepared || this.restarting) return;
@@ -176,7 +176,7 @@ export class UpdateManager {
   }
 
   private async pullNewestTarget(): Promise<void> {
-    const reference = `ghcr.io/${repository}@${this.target!.digest}`;
+    const reference = `${this.runtime!.repository}@${this.target!.digest}`;
     this.prepared = undefined;
     this.setState("pulling");
     this.prepared = await (this.deps.prepareUpdate ?? prepareUpdate)(reference, (progress) => {

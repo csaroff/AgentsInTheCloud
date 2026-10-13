@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareChannelUpdate } from "./channel-update.ts";
+import { upstreamAppRepository } from "../../../packages/shared/src/app-image.ts";
 
 let directory: string;
 let settingsPath: string;
@@ -25,7 +26,7 @@ function imageOperations() {
 
 test("missing update settings selects latest", async () => {
   const images = imageOperations();
-  expect(await prepareChannelUpdate(settingsPath, images)).toBe("sha256:resolved-app");
+  expect(await prepareChannelUpdate(settingsPath, upstreamAppRepository, images)).toBe("sha256:resolved-app");
   expect(images.pull).toHaveBeenCalledWith("ghcr.io/lucasmeijer/agents-in-the-cloud:latest");
   expect(images.inspect).toHaveBeenCalledWith("ghcr.io/lucasmeijer/agents-in-the-cloud:latest");
 });
@@ -38,7 +39,7 @@ test.each([
 ])("settings %s select %s", async (settings, channel) => {
   await writeFile(settingsPath, settings);
   const images = imageOperations();
-  await prepareChannelUpdate(settingsPath, images);
+  await prepareChannelUpdate(settingsPath, upstreamAppRepository, images);
   expect(images.pull).toHaveBeenCalledWith(`ghcr.io/lucasmeijer/agents-in-the-cloud:${channel}`);
   expect(images.inspect).toHaveBeenCalledWith(`ghcr.io/lucasmeijer/agents-in-the-cloud:${channel}`);
 });
@@ -46,9 +47,9 @@ test.each([
 test("reads channel again for each update", async () => {
   const images = imageOperations();
   await writeFile(settingsPath, '{"releaseChannel":"stable"}');
-  await prepareChannelUpdate(settingsPath, images);
+  await prepareChannelUpdate(settingsPath, upstreamAppRepository, images);
   await writeFile(settingsPath, '{"releaseChannel":"latest"}');
-  await prepareChannelUpdate(settingsPath, images);
+  await prepareChannelUpdate(settingsPath, upstreamAppRepository, images);
   expect(images.pull.mock.calls).toEqual([
     ["ghcr.io/lucasmeijer/agents-in-the-cloud:stable"],
     ["ghcr.io/lucasmeijer/agents-in-the-cloud:latest"],
@@ -67,7 +68,7 @@ test.each([
 ])("invalid settings %s fail without pulling or inspecting", async (settings) => {
   await writeFile(settingsPath, settings);
   const images = imageOperations();
-  await expect(prepareChannelUpdate(settingsPath, images)).rejects.toThrow();
+  await expect(prepareChannelUpdate(settingsPath, upstreamAppRepository, images)).rejects.toThrow();
   expect(images.pull).not.toHaveBeenCalled();
   expect(images.inspect).not.toHaveBeenCalled();
 });
@@ -83,7 +84,7 @@ test("pull failures propagate without inspecting a potentially stale local image
   const failure = new Error("Registry unavailable");
   const images = imageOperations();
   images.pull.mockImplementation(async () => { throw failure; });
-  await expect(prepareChannelUpdate(settingsPath, images)).rejects.toBe(failure);
+  await expect(prepareChannelUpdate(settingsPath, upstreamAppRepository, images)).rejects.toBe(failure);
   expect(images.inspect).not.toHaveBeenCalled();
 });
 
@@ -102,8 +103,8 @@ test("always completes a fresh pull before inspecting and returns the exact imag
       return `sha256:revision-${revision}`;
     },
   };
-  expect(await prepareChannelUpdate(settingsPath, images)).toBe("sha256:revision-1");
-  expect(await prepareChannelUpdate(settingsPath, images)).toBe("sha256:revision-2");
+  expect(await prepareChannelUpdate(settingsPath, upstreamAppRepository, images)).toBe("sha256:revision-1");
+  expect(await prepareChannelUpdate(settingsPath, upstreamAppRepository, images)).toBe("sha256:revision-2");
   expect(events).toEqual([
     "pull:ghcr.io/lucasmeijer/agents-in-the-cloud:latest",
     "pulled:1",
@@ -118,6 +119,13 @@ test("inspect failures propagate", async () => {
   const failure = new Error("Image inspection failed");
   const images = imageOperations();
   images.inspect.mockImplementation(async () => { throw failure; });
-  await expect(prepareChannelUpdate(settingsPath, images)).rejects.toBe(failure);
+  await expect(prepareChannelUpdate(settingsPath, upstreamAppRepository, images)).rejects.toBe(failure);
   expect(images.pull).toHaveBeenCalledTimes(1);
+});
+
+test("follows the running app's repository", async () => {
+  await writeFile(settingsPath, '{"releaseChannel":"stable"}');
+  const images = imageOperations();
+  await prepareChannelUpdate(settingsPath, "ghcr.io/someone/agents-in-the-cloud-fork", images);
+  expect(images.pull).toHaveBeenCalledWith("ghcr.io/someone/agents-in-the-cloud-fork:stable");
 });

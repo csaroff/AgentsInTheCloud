@@ -1,3 +1,4 @@
+import { upstreamAppRepository } from "@agents-in-the-cloud/shared/app-image";
 import { createAgentsInTheCloudEventBus } from "@agents-in-the-cloud/core";
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -50,7 +51,7 @@ const newerDigest = `sha256:${"c".repeat(64)}`;
 const exact = `ghcr.io/lucasmeijer/agents-in-the-cloud@${newDigest}`;
 function manager(extra: UpdateManagerDeps = {}) {
   return new UpdateManager({
-    detectRuntime: async () => ({ currentDigest: oldDigest }),
+    detectRuntime: async () => ({ repository: upstreamAppRepository, currentDigest: oldDigest }),
     fetchMetadata: async () => ({ digest: newDigest, requiredSystemVersion: 0 }),
     prepareUpdate: async (reference) => ({ reference, imageId: "sha256:prepared-image-id" }),
     readSystemVersion: async () => requiredSystemVersion,
@@ -109,6 +110,20 @@ test("System reports its version through the supervisor; older Systems report no
   expect(await readSystemVersion(async () => Response.json({ systemVersion: 4, healthy: true }))).toBe(4);
   expect(await readSystemVersion(async () => Response.json({ healthy: true }))).toBe(0);
   await expect(readSystemVersion(async () => new Response("", { status: 503 }))).rejects.toThrow("Supervisor status failed: 503");
+});
+test("a fork installation checks and downloads from its own repository", async () => {
+  const fork = "ghcr.io/someone/agents-in-the-cloud-fork";
+  const checked: string[] = [];
+  const prepared: string[] = [];
+  const instance = manager({
+    detectRuntime: async () => ({ repository: fork, currentDigest: oldDigest }),
+    fetchMetadata: async (repository) => { checked.push(repository); return { digest: newDigest, requiredSystemVersion: 0 }; },
+    prepareUpdate: async (reference) => { prepared.push(reference); return { reference, imageId: "sha256:fork-image" }; },
+  });
+  await instance.initialize(context().ctx);
+  await instance.startPull();
+  expect(checked).toEqual([fork]);
+  expect(prepared).toEqual([`${fork}@${newDigest}`]);
 });
 test("download remains in progress until all preparation completes; restart uses the exact prepared image", async () => {
   const gate = deferred();
@@ -206,7 +221,7 @@ test("channel changes persist, discard prior prepared images, and survive manage
 test("a superseded channel check cannot publish success or failure", async () => {
   for (const fail of [false, true]) {
     const pending = deferred<ImageMetadata>();
-    const instance = manager({ readChannel: async () => "stable", fetchMetadata: async (channel) => channel === "latest" ? pending.promise : { digest: newDigest, requiredSystemVersion: 0 } });
+    const instance = manager({ readChannel: async () => "stable", fetchMetadata: async (_repository, channel) => channel === "latest" ? pending.promise : { digest: newDigest, requiredSystemVersion: 0 } });
     await instance.initialize(context().ctx);
     const stale = instance.setUpdateChannel("latest");
     await Bun.sleep(0);
@@ -232,7 +247,7 @@ test("new installations discover latest updates and pin their immutable image", 
   const prepared: string[] = [];
   const instance = manager({
     readChannel: async () => undefined,
-    fetchMetadata: async (channel) => { channels.push(channel); return { digest: newDigest, requiredSystemVersion: 0 }; },
+    fetchMetadata: async (_repository, channel) => { channels.push(channel); return { digest: newDigest, requiredSystemVersion: 0 }; },
     prepareUpdate: async (reference) => { prepared.push(reference); return { reference, imageId: "sha256:latest-image" }; },
   });
   expect(instance.snapshot().updateChannel).toBe("latest");
@@ -248,7 +263,7 @@ test.each(["stable", "latest"] as const)("stored %s channel overrides the latest
   const channels: string[] = [];
   const instance = manager({
     readChannel: async () => channel,
-    fetchMetadata: async (selected) => { channels.push(selected); return { digest: newDigest, requiredSystemVersion: 0 }; },
+    fetchMetadata: async (_repository, selected) => { channels.push(selected); return { digest: newDigest, requiredSystemVersion: 0 }; },
   });
   await instance.initialize(context().ctx);
   expect(instance.snapshot().updateChannel).toBe(channel);
@@ -265,7 +280,7 @@ test("switching from stable to latest persists the channel and refreshes the tar
     const dependencies = {
       readChannel: readStoredUpdateChannel,
       writeChannel: writeStoredUpdateChannel,
-      fetchMetadata: async (channel: "stable" | "latest") => {
+      fetchMetadata: async (_repository: string, channel: "stable" | "latest") => {
         channels.push(channel);
         return { digest: channel === "latest" ? newerDigest : newDigest, requiredSystemVersion: 0 };
       },

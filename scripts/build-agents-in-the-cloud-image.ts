@@ -308,10 +308,16 @@ const systemCompatibility = Value.Parse(
   Type.Object({ requiredSystemVersion: Type.Integer({ minimum: 0 }), requiredSystemVersionLabel: Type.String() }),
   await import(join(process.cwd(), "packages/shared/src/system-version.ts")),
 );
+const { appRepositoryLabel } = Value.Parse(
+  Type.Object({ appRepositoryLabel: Type.String() }),
+  await import(join(process.cwd(), "packages/shared/src/app-image.ts")),
+);
 
 await buildImage(imageRefs, [
   ...allBuildArgs.flatMap((buildArg) => ["--build-arg", buildArg]),
   "--label", `${systemCompatibility.requiredSystemVersionLabel}=${systemCompatibility.requiredSystemVersion}`,
+  // Installations update from the repository their app was built for, so forks keep following their own images.
+  "--label", `${appRepositoryLabel}=${options.image}`,
   "--file", "apps/web/Dockerfile", ".",
 ]);
 
