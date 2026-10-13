@@ -13,8 +13,9 @@ import { requiredSystemVersion } from "@agents-in-the-cloud/shared/system-versio
 import { errorMessage, escapeHtml, turboStream, turboStreamResponse, type SettingsContribution, type WorkspaceModule, type WorkspaceServerModuleContext } from "@agents-in-the-cloud/shared";
 import { isUpdateChannel, type UpdateChannel } from "./update-channel.ts";
 import { detectSelfUpdateRuntime, prepareUpdate, type PreparedUpdate, type PullProgress, type SelfUpdateRuntime } from "./docker.ts";
-import { fetchChannelImageMetadata, repository, type ImageMetadata } from "./registry.ts";
-import { readStoredUpdateChannel, writeStoredUpdateChannel } from "./settings-store.ts";
+import { fetchChannelImageMetadata, type ImageMetadata } from "./registry.ts";
+import { appRepository } from "@agents-in-the-cloud/shared/app-image";
+import { readStoredUpdateChannel, writeStoredAppRepository, writeStoredUpdateChannel } from "./settings-store.ts";
 import { readSystemVersion, requestSupervisorUpdate } from "./supervisor.ts";
 
 const updateSidebarContributionId = "agents-in-the-cloud-update";
@@ -43,6 +44,7 @@ export interface UpdateManagerDeps {
   fetchReleaseHistory?: typeof fetchReleaseHistory;
   readChannel?: () => Promise<UpdateChannel | undefined>;
   writeChannel?: (channel: UpdateChannel) => Promise<void>;
+  writeRepository?: (repository: string) => Promise<void>;
   detectRuntime?: () => Promise<SelfUpdateRuntime | undefined>;
   fetchMetadata?: (channel: UpdateChannel) => Promise<ImageMetadata>;
   prepareUpdate?: (reference: string, onProgress: (progress: PullProgress) => void) => Promise<PreparedUpdate>;
@@ -80,6 +82,8 @@ export class UpdateManager {
     if (this.runtime) this.systemVersion = await (this.deps.readSystemVersion ?? readSystemVersion)();
     this.updateSidebar();
     if (!this.runtime) return;
+    // The installer's updates go through System, which pulls this repository's channel tag too.
+    await this.deps.writeRepository?.(appRepository);
     await this.checkNow().catch((error) => console.error("Update check failed", error));
     const checkForUpdate = () => void this.checkNow().catch((error) => console.error("Update check failed", error));
     if (this.deps.setInterval) {
@@ -176,7 +180,7 @@ export class UpdateManager {
   }
 
   private async pullNewestTarget(): Promise<void> {
-    const reference = `ghcr.io/${repository}@${this.target!.digest}`;
+    const reference = `${appRepository}@${this.target!.digest}`;
     this.prepared = undefined;
     this.setState("pulling");
     this.prepared = await (this.deps.prepareUpdate ?? prepareUpdate)(reference, (progress) => {
@@ -218,7 +222,7 @@ export class UpdateManager {
   }
 }
 
-const manager = new UpdateManager({ readChannel: readStoredUpdateChannel, writeChannel: writeStoredUpdateChannel });
+const manager = new UpdateManager({ readChannel: readStoredUpdateChannel, writeChannel: writeStoredUpdateChannel, writeRepository: writeStoredAppRepository });
 
 function renderCheckButton(state: "initial" | "in-progress"): string {
   return progressButtonHtml({

@@ -1,4 +1,5 @@
 import { resolveImage, type PlannedImage } from "./registry.ts";
+import { appRepository } from "@agents-in-the-cloud/shared/app-image";
 import { readFile } from "node:fs/promises";
 import { request } from "node:http";
 import { hostname } from "node:os";
@@ -62,7 +63,7 @@ export async function detectSelfUpdateRuntime(exec: DockerExec = dockerExec, con
   const container = Value.Parse(Type.Array(Type.Object({ Image: Type.String(), Config: Type.Object({ Labels: Type.Optional(Type.Union([labelsSchema, Type.Null()])) }) })), JSON.parse(result.stdout))[0];
   if (container?.Config.Labels?.["agents-in-the-cloud.role"] !== "app") return undefined;
   const image = await dockerImageInspect(container.Image, exec);
-  return { currentRevision: image.Config?.Labels?.["org.opencontainers.image.revision"], currentDigest: image.RepoDigests?.find((ref) => ref.startsWith("ghcr.io/lucasmeijer/agents-in-the-cloud@"))?.split("@")[1] ?? image.Id };
+  return { currentRevision: image.Config?.Labels?.["org.opencontainers.image.revision"], currentDigest: image.RepoDigests?.find((ref) => ref.startsWith(`${appRepository}@`))?.split("@")[1] ?? image.Id };
 }
 /** Docker preserves images referenced by any container, including stopped containers. */
 export async function pruneUnusedAgentsInTheCloudImages(exec: DockerExec = dockerExec): Promise<void> {

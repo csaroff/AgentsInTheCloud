@@ -15,6 +15,10 @@ export async function readStoredUpdateChannel(): Promise<UpdateChannel | undefin
   return updateChannel;
 }
 
+export async function writeStoredAppRepository(repository: string): Promise<void> {
+  await updateJsonSettings(settingsPath(), (settings) => { settings.appRepository = repository; });
+}
+
 export async function writeStoredUpdateChannel(channel: UpdateChannel): Promise<void> {
   await updateJsonSettings(settingsPath(), (settings) => { settings.releaseChannel = channel; });
 }

@@ -10,8 +10,9 @@
  *
  * - 0: any System from before versions were reported
  * - 1: the private-network-access host operation
+ * - 2: channel updates pull the app repository recorded in update.json
  */
-export const systemVersion = 1;
+export const systemVersion = 2;
 
 /** The lowest System version this app relies on. Raise it when the app starts using a newer System addition. */
 export const requiredSystemVersion = 1;

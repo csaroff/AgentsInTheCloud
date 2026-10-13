@@ -121,3 +121,15 @@ test("inspect failures propagate", async () => {
   await expect(prepareChannelUpdate(settingsPath, images)).rejects.toBe(failure);
   expect(images.pull).toHaveBeenCalledTimes(1);
 });
+
+test("pulls the app repository the app recorded", async () => {
+  await writeFile(settingsPath, '{"releaseChannel":"stable","appRepository":"ghcr.io/someone/agents-in-the-cloud-fork"}');
+  const images = imageOperations();
+  await prepareChannelUpdate(settingsPath, images);
+  expect(images.pull).toHaveBeenCalledWith("ghcr.io/someone/agents-in-the-cloud-fork:stable");
+});
+
+test("rejects a malformed app repository", async () => {
+  await writeFile(settingsPath, '{"appRepository":"--help"}');
+  await expect(prepareChannelUpdate(settingsPath, imageOperations())).rejects.toThrow("Invalid update settings");
+});

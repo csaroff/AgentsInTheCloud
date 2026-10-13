@@ -2,12 +2,16 @@ import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-// The app owns this persisted setting. System reads it independently so recovery
+// The app owns these persisted settings. System reads them independently so recovery
 // never requires a functioning app or a second, potentially stale channel setting.
 // The app calls this Update channel; keep the existing persisted field spelling.
+// appRepository is where the app's checkout publishes images, so forks update from their own.
 const settingsSchema = Type.Object({
   releaseChannel: Type.Optional(Type.Union([Type.Literal("stable"), Type.Literal("latest")])),
+  appRepository: Type.Optional(Type.String({ pattern: "^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+$" })),
 });
+// Apps from before appRepository was recorded were all published here.
+const upstreamAppRepository = "ghcr.io/lucasmeijer/agents-in-the-cloud";
 
 export async function prepareChannelUpdate(settingsPath: string, images: {
   pull: (reference: string) => Promise<void>;
@@ -20,7 +24,7 @@ export async function prepareChannelUpdate(settingsPath: string, images: {
   const settings: unknown = text === undefined ? {} : JSON.parse(text);
   if (!Value.Check(settingsSchema, settings)) throw new Error("Invalid update settings");
   const updateChannel = settings.releaseChannel ?? "latest";
-  const reference = `ghcr.io/lucasmeijer/agents-in-the-cloud:${updateChannel}`;
+  const reference = `${settings.appRepository ?? upstreamAppRepository}:${updateChannel}`;
   // Always refresh the mutable channel tag, even if Docker already has it.
   // Pin the result before dependencies are prepared or the app is stopped.
   await images.pull(reference);

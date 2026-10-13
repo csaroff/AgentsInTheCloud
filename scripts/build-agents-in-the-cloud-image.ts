@@ -8,6 +8,7 @@ import { Value } from "typebox/value";
 import { arch } from "node:os";
 import { imageHasPlatforms } from "../packages/workspace-image/src/local-images.ts";
 import { registryImageHasPlatforms } from "./image-platforms.ts";
+import { appRepository } from "../packages/shared/src/app-image.ts";
 import { prepareDefaultWorkspaceImage, ensureGeneratedDefaultWorkspaceImage } from "@agents-in-the-cloud/workspace-image";
 
 const usage = `Build the AgentsInTheCloud Docker image.
@@ -16,7 +17,7 @@ Usage:
   bun run scripts/build-agents-in-the-cloud-image.ts [options]
 
 Options:
-  --image <name>        Image repository/name (default: ghcr.io/lucasmeijer/agents-in-the-cloud)
+  --image <name>        Image repository/name (default: ${appRepository})
   --tag <tag>           Tag to apply. May be passed more than once (default: git describe/short sha)
   --latest             Tag the image as <image>:latest (default)
   --no-latest          Do not update latest (release staging)
@@ -68,7 +69,7 @@ function takeValue(args: string[], index: number, flag: string): string {
 
 function parseArgs(args: string[]): Options {
   const options: Options = {
-    image: "ghcr.io/lucasmeijer/agents-in-the-cloud",
+    image: appRepository,
     tags: [],
     latest: true,
     stable: false,
@@ -207,7 +208,6 @@ function gitCommitId(): string {
 }
 
 function workspaceImageRepository(appImage: string): string {
-  if (appImage === "ghcr.io/lucasmeijer/agents-in-the-cloud") return "ghcr.io/lucasmeijer/agents-in-the-cloud-workspace";
   return `${appImage}-workspace`;
 }
 

@@ -1,3 +1,4 @@
+import { appRepository } from "@agents-in-the-cloud/shared/app-image";
 import { createAgentsInTheCloudEventBus } from "@agents-in-the-cloud/core";
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -57,6 +58,12 @@ function manager(extra: UpdateManagerDeps = {}) {
     setInterval: noInterval, ...extra,
   });
 }
+test("System-managed apps record their repository for installer updates; others don't", async () => {
+  const recorded: string[] = [];
+  await manager({ writeRepository: async (repository) => { recorded.push(repository); } }).initialize(context().ctx);
+  await manager({ detectRuntime: async () => undefined, writeRepository: async (repository) => { recorded.push(repository); } }).initialize(context().ctx);
+  expect(recorded).toEqual([appRepository]);
+});
 test("non-System installations neither discover updates nor accept update operations", async () => {
   const instance = manager({ detectRuntime: async () => undefined, fetchMetadata: async () => { throw new Error("must not check"); } });
   await instance.initialize(context().ctx);
