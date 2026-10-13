@@ -207,10 +207,6 @@ function gitCommitId(): string {
   return commit ? `${commit}${dirty}` : "unknown";
 }
 
-function workspaceImageRepository(appImage: string): string {
-  return `${appImage}-workspace`;
-}
-
 function workspaceHashTag(metadataTag: string): string {
   const marker = "agents-in-the-cloud-workspace:";
   if (!metadataTag.startsWith(marker)) throw new Error(`unexpected workspace image metadata tag: ${metadataTag}`);
@@ -272,7 +268,7 @@ const imageRefs = uniqueTags.map((tag) => `${options.image}:${tag}`);
 
 const workspaceMetadata = workspaceContext.metadata;
 const workspaceTag = workspaceHashTag(workspaceMetadata.tag);
-const workspaceRepo = workspaceImageRepository(options.image);
+const workspaceRepo = `${options.image}-workspace`;
 const defaultWorkspaceImageRef = `${workspaceRepo}:${workspaceTag}`;
 
 let shouldBuildWorkspace = false;

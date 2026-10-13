@@ -115,8 +115,8 @@ async function fetchRegistryImage(base: string, version: string, fetcher: HttpFe
 }
 
 export async function fetchChannelImageMetadata(channel: UpdateChannel, fetcher: HttpFetcher = fetch, platform = { os: "linux", architecture: currentArch() }): Promise<ImageMetadata> {
-  const [registry, ...name] = appRepository.split("/");
-  const image = await fetchRegistryImage(`https://${registry}/v2/${name.join("/")}`, channel, fetcher, platform);
+  const { base } = parseReference(`${appRepository}:${channel}`);
+  const image = await fetchRegistryImage(base, channel, fetcher, platform);
   return { digest: image.digest, revision: image.labels["org.opencontainers.image.revision"], requiredSystemVersion: parseSystemVersion(image.labels[requiredSystemVersionLabel]) };
 }
 
@@ -128,8 +128,7 @@ export interface PlannedImage {
   dependencies: string[];
 }
 
-/** Read only manifests and configuration; no image layers are downloaded here. */
-export async function resolveImage(reference: string, fetcher: HttpFetcher = fetch, platform = { os: "linux", architecture: currentArch() }): Promise<PlannedImage> {
+function parseReference(reference: string) {
   Value.Assert(imageReferenceSchema, reference);
   const parts = reference.split("/");
   const explicitRegistry = parts.length > 1 && (parts[0]!.includes(".") || parts[0]!.includes(":") || parts[0] === "localhost");
@@ -142,7 +141,12 @@ export async function resolveImage(reference: string, fetcher: HttpFetcher = fet
   if (registry === "docker.io" && !name.includes("/")) name = `library/${name}`;
   const host = registry === "docker.io" ? "registry-1.docker.io" : registry;
   const protocol = /^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? "http" : "https";
-  const base = `${protocol}://${host}/v2/${name}`;
+  return { registry, name, version, base: `${protocol}://${host}/v2/${name}` };
+}
+
+/** Read only manifests and configuration; no image layers are downloaded here. */
+export async function resolveImage(reference: string, fetcher: HttpFetcher = fetch, platform = { os: "linux", architecture: currentArch() }): Promise<PlannedImage> {
+  const { registry, name, version, base } = parseReference(reference);
   const image = await fetchRegistryImage(base, version, fetcher, platform);
   const dependencies = Value.Parse(Type.Array(imageReferenceSchema), JSON.parse(image.labels["eagerly-preload"] ?? "[]"));
   // Preserve an explicitly selected index digest so Docker also registers that declared reference.

@@ -14,8 +14,8 @@ import { errorMessage, escapeHtml, turboStream, turboStreamResponse, type Settin
 import { isUpdateChannel, type UpdateChannel } from "./update-channel.ts";
 import { detectSelfUpdateRuntime, prepareUpdate, type PreparedUpdate, type PullProgress, type SelfUpdateRuntime } from "./docker.ts";
 import { fetchChannelImageMetadata, type ImageMetadata } from "./registry.ts";
-import { appRepository, systemRepository } from "@agents-in-the-cloud/shared/publishing";
-import { readStoredUpdateChannel, writeStoredRepositories, writeStoredUpdateChannel, type Repositories } from "./settings-store.ts";
+import { appRepository } from "@agents-in-the-cloud/shared/publishing";
+import { readStoredUpdateChannel, writeStoredRepositories, writeStoredUpdateChannel } from "./settings-store.ts";
 import { readSystemVersion, requestSupervisorUpdate } from "./supervisor.ts";
 
 const updateSidebarContributionId = "agents-in-the-cloud-update";
@@ -44,7 +44,7 @@ export interface UpdateManagerDeps {
   fetchReleaseHistory?: typeof fetchReleaseHistory;
   readChannel?: () => Promise<UpdateChannel | undefined>;
   writeChannel?: (channel: UpdateChannel) => Promise<void>;
-  writeRepositories?: (repositories: Repositories) => Promise<void>;
+  writeRepositories?: () => Promise<void>;
   detectRuntime?: () => Promise<SelfUpdateRuntime | undefined>;
   fetchMetadata?: (channel: UpdateChannel) => Promise<ImageMetadata>;
   prepareUpdate?: (reference: string, onProgress: (progress: PullProgress) => void) => Promise<PreparedUpdate>;
@@ -83,7 +83,7 @@ export class UpdateManager {
     this.updateSidebar();
     if (!this.runtime) return;
     // The installer pulls System, and System pulls the app, from these repositories' channel tags.
-    await this.deps.writeRepositories?.({ appRepository, systemRepository });
+    await this.deps.writeRepositories?.();
     await this.checkNow().catch((error) => console.error("Update check failed", error));
     const checkForUpdate = () => void this.checkNow().catch((error) => console.error("Update check failed", error));
     if (this.deps.setInterval) {
