@@ -1,4 +1,3 @@
-import { codexSubagentOutputSchemas } from "./codex-subagent-output-schemas.ts";
 import { randomUUID } from "node:crypto";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
@@ -20,16 +19,9 @@ export class SubagentModelInput {
     return { role: "user" as const, content: api === "openai-codex-responses" ? this.placeholder(message) : message.content.map((part) => part.text).join("\n"), timestamp };
   }
   transform(payload: JsonObject, api: string): JsonObject {
-    if (api === "openai-codex-responses" && Array.isArray(payload.tools)) {
-      payload = { ...payload, tools: payload.tools.map((tool) => {
-        if (!isJsonObject(tool) || !Value.Check(Type.String(), tool.name)) return tool;
-        const schema = codexSubagentOutputSchemas.get(tool.name);
-        return schema ? { ...tool, strict: false, output_schema: schema } : tool;
-      }) };
-    }
     if (!this.messages.size) return payload;
     if (api !== "openai-codex-responses") throw new Error("Native agent-message placeholders reached a non-native provider; select the user-message mapping before provider serialization.");
-    if (!isJsonObject(payload) || !Array.isArray(payload.input)) throw new Error("Expected a Codex Responses input array.");
+    if (!Array.isArray(payload.input)) throw new Error("Expected a Codex Responses input array.");
     return { ...payload, input: payload.input.map((item) => {
       if (!isJsonObject(item) || !Array.isArray(item.content)) return item;
       const tokens = item.content.filter(isJsonObject).filter((part) => part.type === "input_text" && Value.Check(Type.String(), part.text) && this.messages.has(part.text));

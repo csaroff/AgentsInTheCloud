@@ -13,7 +13,6 @@ interface AgentToolDefinitionView {
   name: string;
   description: string;
   parameters: unknown;
-  output_schema?: unknown;
 }
 
 export interface AgentModelContextView {
