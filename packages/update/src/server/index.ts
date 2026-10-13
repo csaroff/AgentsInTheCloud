@@ -14,7 +14,7 @@ import { errorMessage, escapeHtml, turboStream, turboStreamResponse, type Settin
 import { isUpdateChannel, type UpdateChannel } from "./update-channel.ts";
 import { detectSelfUpdateRuntime, prepareUpdate, type PreparedUpdate, type PullProgress, type SelfUpdateRuntime } from "./docker.ts";
 import { fetchChannelImageMetadata, type ImageMetadata } from "./registry.ts";
-import { appRepository } from "@agents-in-the-cloud/shared/app-image";
+import { appRepository } from "@agents-in-the-cloud/shared/publishing";
 import { readStoredUpdateChannel, writeStoredAppRepository, writeStoredUpdateChannel } from "./settings-store.ts";
 import { readSystemVersion, requestSupervisorUpdate } from "./supervisor.ts";
 

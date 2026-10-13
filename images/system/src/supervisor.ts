@@ -12,7 +12,7 @@ import { Value } from "typebox/value";
 import { installWorkspaceFirewall, resolverAddresses, setPrivateNetworkAccess } from "./firewall.ts";
 import { assertAppCompatible } from "./app-compatibility.ts";
 import { systemVersion } from "../../../packages/shared/src/system-version.ts";
-import { appRepository } from "../../../packages/shared/src/app-image.ts";
+import { appRepository } from "../../../packages/shared/src/publishing.ts";
 import { filesystemFailure } from "./filesystems.ts";
 import { initializeResources } from "./resources.ts";
 import { spawn, type ChildProcess } from "node:child_process";

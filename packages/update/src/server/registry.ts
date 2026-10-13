@@ -1,5 +1,5 @@
 import { type UpdateChannel } from "./update-channel.ts";
-import { appRepository } from "@agents-in-the-cloud/shared/app-image";
+import { appRepository } from "@agents-in-the-cloud/shared/publishing";
 import { parseSystemVersion, requiredSystemVersionLabel } from "@agents-in-the-cloud/shared/system-version";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";

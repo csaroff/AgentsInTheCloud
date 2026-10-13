@@ -1,5 +1,5 @@
 import { resolveImage, type PlannedImage } from "./registry.ts";
-import { appRepository } from "@agents-in-the-cloud/shared/app-image";
+import { appRepository } from "@agents-in-the-cloud/shared/publishing";
 import { readFile } from "node:fs/promises";
 import { request } from "node:http";
 import { hostname } from "node:os";

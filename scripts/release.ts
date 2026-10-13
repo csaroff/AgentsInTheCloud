@@ -7,8 +7,8 @@ import { authenticateRegistry, commandRunner, ensureBuilders, inspectImage, insp
 import { prepareReleaseNotes, publishReleaseNotes, readReleaseNotes } from "./release-notes.ts";
 import { parseSystemVersion, requiredSystemVersionLabel, systemVersionLabel } from "../packages/shared/src/system-version.ts";
 import { acquireReleaseLock } from "./release-lock.ts";
+import { appRepository as image, systemRepository as systemImage } from "../packages/shared/src/publishing.ts";
 
-const image = "ghcr.io/lucasmeijer/agents-in-the-cloud";
 const root = resolve(import.meta.dir, "..");
 export const usage = `Release AgentsInTheCloud from the current origin/main commit.
 
@@ -86,8 +86,6 @@ export async function verifyRevision(run: Run, ref: string, commit: string): Pro
   for (const dependency of dependencies) await inspectImage(run, dependency);
   return manifest.digest;
 }
-
-const systemImage = "ghcr.io/lucasmeijer/agents-in-the-cloud-system";
 
 /** Installations get System from their app's channel, so each channel's System must already support the app. */
 export async function assertChannelSystemsSupportApp(run: Run, appDigest: string, channels: readonly ("latest" | "stable")[]): Promise<void> {

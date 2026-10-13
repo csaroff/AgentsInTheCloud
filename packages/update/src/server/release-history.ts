@@ -1,8 +1,8 @@
 import { Type, type TSchema, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { type HttpFetcher } from "./registry.ts";
+import { githubRepository } from "@agents-in-the-cloud/shared/publishing";
 
-export const githubRepository = "lucasmeijer/AgentsInTheCloud";
 export const releaseTagPrefix = "stable-";
 const marker = "agents-in-the-cloud-release";
 const recordSchema = Type.Object({

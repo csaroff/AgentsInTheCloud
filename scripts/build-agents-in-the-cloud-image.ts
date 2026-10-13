@@ -8,7 +8,7 @@ import { Value } from "typebox/value";
 import { arch } from "node:os";
 import { imageHasPlatforms } from "../packages/workspace-image/src/local-images.ts";
 import { registryImageHasPlatforms } from "./image-platforms.ts";
-import { appRepository } from "../packages/shared/src/app-image.ts";
+import { appRepository } from "../packages/shared/src/publishing.ts";
 import { prepareDefaultWorkspaceImage, ensureGeneratedDefaultWorkspaceImage } from "@agents-in-the-cloud/workspace-image";
 
 const usage = `Build the AgentsInTheCloud Docker image.
@@ -165,7 +165,7 @@ function authenticateGhcr(options: Options): void {
   if (!token) throw new Error("GH_PACKAGE_TOKEN is required to publish images to ghcr.io");
 
   const result = Bun.spawnSync(
-    ["docker", "login", "ghcr.io", "--username", "lucasmeijer", "--password-stdin"],
+    ["docker", "login", "ghcr.io", "--username", options.image.split("/")[1]!, "--password-stdin"],
     { stdin: new TextEncoder().encode(token), stdout: "inherit", stderr: "inherit" },
   );
   if (result.exitCode !== 0) throw new Error(`docker login ghcr.io failed with exit code ${result.exitCode}`);

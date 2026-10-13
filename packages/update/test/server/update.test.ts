@@ -1,4 +1,4 @@
-import { appRepository } from "@agents-in-the-cloud/shared/app-image";
+import { appRepository } from "@agents-in-the-cloud/shared/publishing";
 import { createAgentsInTheCloudEventBus } from "@agents-in-the-cloud/core";
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";

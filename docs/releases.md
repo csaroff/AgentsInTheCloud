@@ -8,6 +8,10 @@ bun run release --stable    # latest and stable
 bun run release --check     # validate the builder without publishing
 ```
 
+The image repositories and the GitHub repository that releases publish to come from
+`packages/shared/src/publishing.ts`. Installations also update from there, so a fork
+changes those two lines to release and update from its own account.
+
 This branch publishes `ghcr.io/lucasmeijer/agents-in-the-cloud:latest` and
 immutable commit/staging tags. `--stable` also advances its `stable` tag after
 VM acceptance. Atelier hotfix releases remain on `main` and use their original

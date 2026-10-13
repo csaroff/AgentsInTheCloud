@@ -1,6 +1,7 @@
 import { Value } from "typebox/value";
 import { Type, type TSchema } from "typebox";
-import { githubRepository, parseReleaseBody, releaseBody, releaseTagPrefix, type ReleaseRecord } from "../packages/update/src/server/release-history.ts";
+import { githubRepository } from "../packages/shared/src/publishing.ts";
+import { parseReleaseBody, releaseBody, releaseTagPrefix, type ReleaseRecord } from "../packages/update/src/server/release-history.ts";
 import type { Run } from "./release-support.ts";
 
 const githubReleaseSchema = Type.Object({ id: Type.Integer(), tag_name: Type.String(), target_commitish: Type.String(), body: Type.Union([Type.String(), Type.Null()]), draft: Type.Boolean() });

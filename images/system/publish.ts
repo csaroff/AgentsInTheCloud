@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { authenticateRegistry, commandRunner, ensureBuilders, inspectImage, inspectPlatform, platforms, type Run } from "../../scripts/release-support.ts";
 import { systemVersion, systemVersionLabel } from "../../packages/shared/src/system-version.ts";
+import { systemRepository as image } from "../../packages/shared/src/publishing.ts";
 
 const root = resolve(import.meta.dir, "../..");
-const image = "ghcr.io/lucasmeijer/agents-in-the-cloud-system";
 
 /** Installations follow System on the same channel as their app, so stable apps never meet an untested System. */
 export async function publishSystem(run: Run, directory: string, check = false, stable = false) {
