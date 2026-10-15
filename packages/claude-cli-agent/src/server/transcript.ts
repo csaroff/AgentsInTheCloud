@@ -4,11 +4,11 @@ import { getAgentsInTheCloudRuntimeContext, readTextIfExists } from "@agents-in-
 import type { TranscriptRecord } from "@agents-in-the-cloud/agent/server/transcript";
 import { workspaceRoot } from "@agents-in-the-cloud/workspace";
 import { Type, type Static } from "typebox";
-import { Value } from "typebox/value";
+import { Compile } from "typebox/compile";
 
 const imageSourceSchema = Type.Object({ type: Type.Literal("base64"), media_type: Type.String(), data: Type.String() });
 const resultBlockSchema = Type.Object({ type: Type.String(), text: Type.Optional(Type.String()), source: Type.Optional(imageSourceSchema) });
-const editInputSchema = Type.Object({ file_path: Type.String(), old_string: Type.String(), new_string: Type.String(), replace_all: Type.Optional(Type.Boolean()) });
+const editInputValidator = Compile(Type.Object({ file_path: Type.String(), old_string: Type.String(), new_string: Type.String(), replace_all: Type.Optional(Type.Boolean()) }));
 const blockSchema = Type.Object({
   type: Type.String(), text: Type.Optional(Type.String()), thinking: Type.Optional(Type.String()),
   source: Type.Optional(imageSourceSchema),
@@ -20,11 +20,11 @@ const messageSchema = Type.Object({
   content: Type.Union([Type.String(), Type.Array(blockSchema)]),
   stop_reason: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
-const rowSchema = Type.Object({
+const rowValidator = Compile(Type.Object({
   type: Type.String(), uuid: Type.Optional(Type.String()), parentUuid: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   timestamp: Type.Optional(Type.String()), isSidechain: Type.Optional(Type.Boolean()), isMeta: Type.Optional(Type.Boolean()),
   subtype: Type.Optional(Type.String()), message: Type.Optional(messageSchema),
-});
+}));
 type ClaudeBlock = Static<typeof blockSchema>;
 
 type ProjectedToolCall = { name: string; args: unknown };
@@ -33,7 +33,7 @@ export function claudeToolCall(block: Pick<ClaudeBlock, "name" | "input">): Proj
   if (block.name === "Bash") return { name: "bash", args: block.input };
   if (block.name === "Read") return { name: "read", args: block.input };
   if (block.name === "Write") return { name: "write", args: block.input };
-  if (block.name === "Edit" && Value.Check(editInputSchema, block.input) && block.input.replace_all !== true) {
+  if (block.name === "Edit" && editInputValidator.Check(block.input) && block.input.replace_all !== true) {
     const { old_string, new_string, ...args } = block.input;
     return { name: "edit", args: { ...args, oldText: old_string, newText: new_string } };
   }
@@ -53,7 +53,7 @@ function resultText(value: ClaudeBlock["content"]): string {
 
 /** Claude Code's native JSONL is untrusted, append-only input; never turn it into a Pi session. */
 export function claudeTranscriptRecords(jsonl: string): TranscriptRecord[] {
-  const rows = Array.from(nativeJsonlRows(jsonl, rowSchema));
+  const rows = Array.from(nativeJsonlRows(jsonl, rowValidator));
   // Claude can rewind and fork. Display the ancestry of the last mainline message,
   // not abandoned alternatives or independent subagents.
   const byId = new Map(rows.flatMap((row) => row.uuid ? [[row.uuid, row] as const] : []));
@@ -105,7 +105,7 @@ export function claudeTranscriptRecords(jsonl: string): TranscriptRecord[] {
  */
 export function claudeTurnSettled(jsonl: string): boolean {
   let settled = false;
-  for (const row of nativeJsonlRows(jsonl, rowSchema)) {
+  for (const row of nativeJsonlRows(jsonl, rowValidator)) {
     if (row.isSidechain === true) continue;
     if (row.type === "user" || row.type === "assistant") settled = false;
     else if (row.type === "system" && row.subtype === "stop_hook_summary") settled = true;
@@ -129,7 +129,7 @@ export async function hasClaudeTurnSettled(_workspaceId: string, sessionId: stri
 export async function loadClaudeTranscriptImage(_workspaceId: string, sessionId: string, entryId: string, contentIndex: number): Promise<Response> {
   const text = await readTextIfExists(nativeSessionPath(sessionId));
   if (text === undefined) return new Response("Not found", { status: 404 });
-  for (const row of nativeJsonlRows(text, rowSchema)) {
+  for (const row of nativeJsonlRows(text, rowValidator)) {
     if (row.uuid !== entryId || !row.message || !Array.isArray(row.message.content)) continue;
     const source = imageSources(row.message.content)[contentIndex];
     if (!source) break;

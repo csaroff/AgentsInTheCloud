@@ -7,9 +7,9 @@ import { buttonHtml } from "@agents-in-the-cloud/design-system/button";
 import { dialogHtml } from "@agents-in-the-cloud/design-system/dialog";
 import { Icons } from "@agents-in-the-cloud/design-system/icons";
 import { toggleHtml } from "@agents-in-the-cloud/design-system/toggle";
-import { isJsonObject, type JsonObject } from "@agents-in-the-cloud/core";
-import { Type, type Static, type TSchema } from "typebox";
-import { Value } from "typebox/value";
+import { isJsonObject, isNumber, isString, type JsonObject, type JsonValue } from "@agents-in-the-cloud/core";
+import { Type } from "typebox";
+import { Compile } from "typebox/compile";
 import { parseDiffFromFile, processPatch, type FileDiffMetadata } from "@pierre/diffs";
 import { diffStats, type DiffOperation } from "./diff.ts";
 import { embeddedBashCommand, formatBashCommandForDisplay, highlightedBashCommandHtml } from "./embedded-code.ts";
@@ -20,12 +20,10 @@ import { codeBlockHtml, detailFullscreen, fullscreenAttributes, transcriptRowCon
 
 type ToolArgumentKey = "command" | "path" | "file_path" | "content" | "offset" | "limit" | "timeout" | "edits" | "oldText" | "newText";
 
-const toolStringArgumentSchema = Type.String();
-const toolNumberArgumentSchema = Type.Number();
-const diffOperationSchema = Type.Object({
+const diffOperationValidator = Compile(Type.Object({
   oldText: Type.String(),
   newText: Type.String(),
-});
+}));
 
 function statusHtml(status: ToolView["status"], readOnly = false): string {
   const state = status === "streaming" || status === "running" ? "running" : status === "error" ? "danger" : "success";
@@ -329,20 +327,20 @@ function toolArgs(tool: ToolView): JsonObject | undefined {
   return isJsonObject(tool.args) ? tool.args : undefined;
 }
 
-function toolArgument<Schema extends TSchema>(args: JsonObject | undefined, schema: Schema, ...keys: ToolArgumentKey[]): Static<Schema> | undefined {
+function toolArgument<T extends JsonValue>(args: JsonObject | undefined, guard: (value: JsonValue | undefined) => value is T, ...keys: ToolArgumentKey[]): T | undefined {
   for (const key of keys) {
     const value = args?.[key];
-    if (Value.Check(schema, value)) return value;
+    if (guard(value)) return value;
   }
   return undefined;
 }
 
 function stringArg(args: JsonObject | undefined, ...keys: ToolArgumentKey[]): string | undefined {
-  return toolArgument(args, toolStringArgumentSchema, ...keys);
+  return toolArgument(args, isString, ...keys);
 }
 
 function numberArg(args: JsonObject | undefined, key: ToolArgumentKey): number | undefined {
-  return toolArgument(args, toolNumberArgumentSchema, key);
+  return toolArgument(args, isNumber, key);
 }
 
 function formatReadRange(args: JsonObject | undefined): string {
@@ -541,7 +539,7 @@ function bashOutputHtml(text: string): string {
 
 function getEditOperations(args: JsonObject | undefined): DiffOperation[] {
   if (Array.isArray(args?.edits)) {
-    return args.edits.flatMap((edit) => Value.Check(diffOperationSchema, edit) ? [edit] : []);
+    return args.edits.flatMap((edit) => diffOperationValidator.Check(edit) ? [edit] : []);
   }
   const oldText = stringArg(args, "oldText");
   const newText = stringArg(args, "newText");

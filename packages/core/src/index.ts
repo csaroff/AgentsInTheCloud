@@ -20,6 +20,8 @@ export {
 
 export {
   isJsonObject,
+  isNumber,
+  isString,
   readJsonObject,
   requestAcceptsJson,
 } from "./json-request.ts";

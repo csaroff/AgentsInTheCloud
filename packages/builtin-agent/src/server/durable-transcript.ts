@@ -5,7 +5,7 @@ import { historyNote } from "@agents-in-the-cloud/legacy-converter/entries";
 import { contentText, type Message } from "@earendil-works/pi-ai";
 import { AgentDoc, CompactionEntry, InboxDoc, LiveDoc, ResetEntry, ToolResultEntry, UsageDoc, type AgentState, type ConversationView, type InboxState, type LiveState, type UsageState } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
-import { Value } from "typebox/value";
+import { Compile } from "typebox/compile";
 import { isJsonObject } from "@agents-in-the-cloud/core";
 import { buildTranscript, isFinalAssistantMessage, isToolViewDetails, toolDetailsIndicateError, type SessionImageRef, type ToolView, type TranscriptItem, type TranscriptRecord } from "@agents-in-the-cloud/agent/server/transcript";
 
@@ -24,7 +24,7 @@ export function durableViewState(view: ConversationView) {
   };
 }
 
-const textBlockSchema = Type.Object({ type: Type.Literal("text"), text: Type.String() });
+const textBlockValidator = Compile(Type.Object({ type: Type.Literal("text"), text: Type.String() }));
 
 function images(content: Message["content"], entryId: string, offset = 0): SessionImageRef[] {
   return !Array.isArray(content) ? [] : content.flatMap((part, index) => part.type === "image"
@@ -150,7 +150,7 @@ export function projectDurableTranscript(view: ConversationView): TranscriptItem
     // SDK capability updates are snapshots { content, details }; native bash
     // publishes direct details. Neither should be appended as repeated output.
     if (isJsonObject(details) && Array.isArray(details.content)) {
-      tool.resultText = details.content.flatMap(part => Value.Check(textBlockSchema, part) ? [part.text] : []).join("\n");
+      tool.resultText = details.content.flatMap(part => textBlockValidator.Check(part) ? [part.text] : []).join("\n");
       details = details.details;
     }
     if (isToolViewDetails(details)) {

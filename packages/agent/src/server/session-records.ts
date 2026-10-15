@@ -1,10 +1,11 @@
 import { contentText } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { isString } from "@agents-in-the-cloud/core";
 import { Type } from "typebox";
-import { Value } from "typebox/value";
+import { Compile } from "typebox/compile";
 import { isToolViewDetails, type SessionImageRef, type TranscriptRecord } from "./transcript.ts";
 
-import { turnStartEntryType, turnStartSchema, turnTimingEntryType, turnTimingRecordSchema } from "./turn-timing.ts";
+import { turnStartEntryType, turnStartValidator, turnTimingEntryType, turnTimingRecordValidator } from "./turn-timing.ts";
 
 interface ImageDimensions {
   width: number;
@@ -35,22 +36,21 @@ function imageDimensions(data: Uint8Array, mimeType: string): ImageDimensions | 
   return undefined;
 }
 
-const sessionImagePartSchema = Type.Object({
+const sessionImagePartValidator = Compile(Type.Object({
   type: Type.Literal("image"),
   mimeType: Type.Optional(Type.Unknown()),
   data: Type.Optional(Type.Unknown()),
-});
-const sessionImageStringSchema = Type.String();
-const sessionTextSignatureSchema = Type.String();
+}));
 
 // Persisted Pi entries are external input. Validate the fields this projection
 // reads without requiring unrelated SDK metadata or rejecting older sessions.
 const textPartSchema = Type.Object({ type: Type.Literal("text"), text: Type.Optional(Type.String()), textSignature: Type.Optional(Type.Unknown()) });
-const assistantPartSchema = Type.Union([
+const textPartValidator = Compile(textPartSchema);
+const assistantPartValidator = Compile(Type.Union([
   textPartSchema,
   Type.Object({ type: Type.Literal("thinking"), thinking: Type.Optional(Type.String()) }),
   Type.Object({ type: Type.Literal("toolCall"), id: Type.String(), name: Type.String(), arguments: Type.Unknown() }),
-]);
+]));
 const contentSchema = Type.Union([Type.String(), Type.Array(Type.Unknown())]);
 const messageSchema = Type.Union([
   Type.Object({ role: Type.Literal("user"), content: contentSchema }),
@@ -64,7 +64,7 @@ const messageSchema = Type.Union([
   Type.Object({ role: Type.Literal("branchSummary"), summary: Type.Optional(Type.String()) }),
 ]);
 const entryFields = { id: Type.String(), timestamp: Type.Optional(Type.String()) };
-const sessionEntrySchema = Type.Union([
+const sessionEntryValidator = Compile(Type.Union([
   Type.Object({ ...entryFields, type: Type.Literal("message"), parentId: Type.Optional(Type.Union([Type.String(), Type.Null()])), message: messageSchema }),
   Type.Object({ timestamp: entryFields.timestamp, type: Type.Literal("custom"), customType: Type.String(), data: Type.Optional(Type.Unknown()) }),
   Type.Object({ ...entryFields, type: Type.Literal("branch_summary"), summary: Type.Optional(Type.String()) }),
@@ -75,12 +75,12 @@ const sessionEntrySchema = Type.Union([
   Type.Object({ ...entryFields, type: Type.Literal("custom_message"), content: contentSchema, display: Type.Boolean() }),
   Type.Object({ ...entryFields, type: Type.Literal("model_change"), provider: Type.String(), modelId: Type.String() }),
   Type.Object({ ...entryFields, type: Type.Literal("thinking_level_change"), thinkingLevel: Type.String() }),
-]);
+]));
 
 type CacheWarmUsage = Extract<SessionEntry, { type: "usage" }>["usage"];
 function sessionContentText(content: string | readonly unknown[]): string {
-  if (Value.Check(sessionImageStringSchema, content)) return content;
-  return contentText(content.filter(part => Value.Check(textPartSchema, part)).map(part => ({ type: "text", text: part.text ?? "" })));
+  if (isString(content)) return content;
+  return contentText(content.filter(part => textPartValidator.Check(part)).map(part => ({ type: "text", text: part.text ?? "" })));
 }
 
 
@@ -91,12 +91,12 @@ interface SessionAssistantTextPart {
 }
 
 function sessionContentImages(entryId: string, content: string | readonly unknown[]): SessionImageRef[] {
-  if (Value.Check(sessionImageStringSchema, content)) return [];
+  if (isString(content)) return [];
   const images: SessionImageRef[] = [];
   content.forEach((part, contentIndex) => {
-    if (!Value.Check(sessionImagePartSchema, part)) return;
-    const mimeType = Value.Check(sessionImageStringSchema, part.mimeType) ? part.mimeType : undefined;
-    const data = Value.Check(sessionImageStringSchema, part.data) ? part.data : undefined;
+    if (!sessionImagePartValidator.Check(part)) return;
+    const mimeType = isString(part.mimeType) ? part.mimeType : undefined;
+    const data = isString(part.data) ? part.data : undefined;
     const dimensions = data && mimeType ? imageDimensions(Buffer.from(data.slice(0, 87_384), "base64"), mimeType) : undefined;
     images.push({ entryId, contentIndex, mimeType, ...dimensions });
   });
@@ -119,12 +119,12 @@ export function recordsFromSessionEntries(entries: readonly unknown[]): Transcri
   const records: TranscriptRecord[] = [];
   let lastSettingChange: { type: "model_change" | "thinking_level_change"; record: TranscriptRecord } | undefined;
   for (const entry of entries) {
-    if (!Value.Check(sessionEntrySchema, entry)) continue;
-    if (entry.type === "custom" && entry.customType === turnStartEntryType && Value.Check(turnStartSchema, entry.data)) {
+    if (!sessionEntryValidator.Check(entry)) continue;
+    if (entry.type === "custom" && entry.customType === turnStartEntryType && turnStartValidator.Check(entry.data)) {
       records.push({ kind: "runStart", ...entry.data, timestamp: entryTimestamp(entry) });
       continue;
     }
-    if (entry.type === "custom" && entry.customType === turnTimingEntryType && Value.Check(turnTimingRecordSchema, entry.data)) {
+    if (entry.type === "custom" && entry.customType === turnTimingEntryType && turnTimingRecordValidator.Check(entry.data)) {
       const { turnEntryId, outcome, ...timing } = entry.data;
       records.push({ kind: "timing", timing, turnEntryId, outcome, timestamp: entryTimestamp(entry) });
       continue;
@@ -136,11 +136,11 @@ export function recordsFromSessionEntries(entries: readonly unknown[]): Transcri
       } else if (message.role === "assistant") {
         const parts: Extract<TranscriptRecord, { kind: "assistant" }>["parts"] = [];
         for (const part of message.content ?? []) {
-          if (!Value.Check(assistantPartSchema, part)) continue;
+          if (!assistantPartValidator.Check(part)) continue;
           if (part.type === "thinking") parts.push({ type: "thinking", text: part.thinking ?? "" });
           else if (part.type === "text") {
             const textPart: SessionAssistantTextPart = { type: "text", text: part.text ?? "" };
-            if (Value.Check(sessionTextSignatureSchema, part.textSignature)) textPart.textSignature = part.textSignature;
+            if (isString(part.textSignature)) textPart.textSignature = part.textSignature;
             parts.push(textPart);
           }
           else if (part.type === "toolCall") parts.push({ type: "toolCall", callId: part.id, name: part.name, args: part.arguments });

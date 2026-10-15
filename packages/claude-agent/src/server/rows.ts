@@ -5,7 +5,7 @@ import { nativeImageTypes, nativeJsonlRows, nativeTimestamp } from "@agents-in-t
 import type { SessionImageRef } from "@agents-in-the-cloud/agent/server/transcript";
 import { workspaceRoot } from "@agents-in-the-cloud/workspace";
 import { Type, type Static } from "typebox";
-import { Value } from "typebox/value";
+import { Compile } from "typebox/compile";
 
 const sourceSchema = Type.Object({ type: Type.String(), media_type: Type.Optional(Type.String()), data: Type.Optional(Type.String()) });
 const resultBlockSchema = Type.Object({ type: Type.String(), text: Type.Optional(Type.String()), source: Type.Optional(sourceSchema) });
@@ -19,7 +19,7 @@ const usageSchema = Type.Object({
   input_tokens: Type.Number(), output_tokens: Type.Number(),
   cache_creation_input_tokens: Type.Optional(Type.Union([Type.Number(), Type.Null()])), cache_read_input_tokens: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
 });
-const rowSchema = Type.Object({
+const rowValidator = Compile(Type.Object({
   type: Type.String(), subtype: Type.Optional(Type.String()), uuid: Type.Optional(Type.String()), timestamp: Type.Optional(Type.String()),
   isSidechain: Type.Optional(Type.Boolean()), isMeta: Type.Optional(Type.Boolean()), isCompactSummary: Type.Optional(Type.Boolean()), isApiErrorMessage: Type.Optional(Type.Boolean()),
   content: Type.Optional(Type.Unknown()),
@@ -29,11 +29,12 @@ const rowSchema = Type.Object({
   })),
   attachment: Type.Optional(Type.Object({ type: Type.String(), prompt: Type.Optional(Type.Union([Type.String(), Type.Array(blockSchema)])), source_uuid: Type.Optional(Type.String()) })),
   customTitle: Type.Optional(Type.String()), aiTitle: Type.Optional(Type.String()),
-});
+}));
+const blockValidator = Compile(blockSchema);
 export type ClaudeBlock = Static<typeof blockSchema>;
 /** Message content as blocks. Live SDK content uses the API's wider block types; keep only the shapes history also records. */
 export function claudeBlocks(content: string | object[]): ClaudeBlock[] {
-  return Array.isArray(content) ? content.filter(block => Value.Check(blockSchema, block)) : [{ type: "text", text: content }];
+  return Array.isArray(content) ? content.filter(block => blockValidator.Check(block)) : [{ type: "text", text: content }];
 }
 
 /** The conversation as Claude Code records it, reduced to what the transcript shows. */
@@ -47,7 +48,7 @@ export type ClaudeRow =
 /** Claude Code's native JSONL is untrusted, append-only input. Sidechains belong to its own subagents. */
 export function claudeRows(jsonl: string): ClaudeRow[] {
   const rows: ClaudeRow[] = [];
-  for (const row of nativeJsonlRows(jsonl, rowSchema)) {
+  for (const row of nativeJsonlRows(jsonl, rowValidator)) {
     if (row.isSidechain === true) continue;
     const timestamp = nativeTimestamp(row.timestamp);
     if (row.type === "attachment" && row.attachment?.type === "queued_command" && row.uuid) {
@@ -93,7 +94,7 @@ export async function listClaudeSessions(directory: string, limit: number): Prom
     const text = await readTextIfExists(join(directory, `${file.id}.jsonl`)) ?? "";
     let title = "";
     let prompt = "";
-    for (const row of nativeJsonlRows(text, rowSchema)) {
+    for (const row of nativeJsonlRows(text, rowValidator)) {
       title = row.customTitle ?? row.aiTitle ?? title;
       if (!prompt && row.type === "user" && row.isMeta !== true && row.isSidechain !== true && row.message) prompt = claudeText(claudeBlocks(row.message.content)).trim();
     }

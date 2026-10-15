@@ -4,17 +4,17 @@ import { recordsFromSessionEntries } from "@agents-in-the-cloud/agent/server/ses
 import { type TranscriptRecord } from "@agents-in-the-cloud/agent/server/transcript";
 import { latestNativeSessionFile, loadNativeTranscriptFiles, loadNativeTranscriptImage, nativeImageTypes, nativeJsonlRows, nativeSessionFiles } from "@agents-in-the-cloud/cli-agent/server";
 import { Type } from "typebox";
-import { Value } from "typebox/value";
+import { Compile } from "typebox/compile";
 
-const rowSchema = Type.Object({
+const rowValidator = Compile(Type.Object({
   type: Type.String(), id: Type.String(), parentId: Type.Union([Type.String(), Type.Null()]), timestamp: Type.String(),
   message: Type.Optional(Type.Object({ role: Type.String(), content: Type.Optional(Type.Union([Type.String(), Type.Array(Type.Object({ type: Type.String() }))])) })),
-});
-const imageSchema = Type.Object({ type: Type.Literal("image"), mimeType: Type.String(), data: Type.String() });
+}));
+const imageValidator = Compile(Type.Object({ type: Type.Literal("image"), mimeType: Type.String(), data: Type.String() }));
 
 /** Pi sessions are trees. Show only the current leaf's ancestry, never abandoned branches. */
 export function piTranscriptRecords(jsonl: string): TranscriptRecord[] {
-  const entries = Array.from(nativeJsonlRows(jsonl, rowSchema));
+  const entries = Array.from(nativeJsonlRows(jsonl, rowValidator));
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const lineage = new Set<string>();
   let current = entries.at(-1);
@@ -38,10 +38,10 @@ export async function loadPiTranscript(workspaceId: string, sessionId: string): 
 }
 export async function loadPiTranscriptImage(workspaceId: string, sessionId: string, entryId: string, contentIndex: number): Promise<Response> {
   return loadNativeTranscriptImage(await piHistoryFiles(workspaceId, sessionId), (jsonl) => {
-    for (const entry of nativeJsonlRows(jsonl, rowSchema)) {
+    for (const entry of nativeJsonlRows(jsonl, rowValidator)) {
       if (entry.id !== entryId || entry.type !== "message" || !Array.isArray(entry.message?.content)) continue;
       const image = entry.message.content[contentIndex];
-      if (Value.Check(imageSchema, image) && nativeImageTypes.has(image.mimeType)) return image;
+      if (imageValidator.Check(image) && nativeImageTypes.has(image.mimeType)) return image;
     }
     return undefined;
   });

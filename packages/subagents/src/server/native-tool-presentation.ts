@@ -1,20 +1,20 @@
 import { Type } from "typebox";
-import { Value } from "typebox/value";
-import { isJsonObject } from "@agents-in-the-cloud/core";
+import { Compile } from "typebox/compile";
+import { isJsonObject, isString } from "@agents-in-the-cloud/core";
 import { escapeHtml } from "@agents-in-the-cloud/shared";
 import type { AgentToolPresentation } from "@agents-in-the-cloud/agent/server";
 import { communicationCardHtml, communicationTraceHtml } from "./render-markup.ts";
 
-const detailsSchema = Type.Object({ recipientId: Type.String(), receiptId: Type.String(), path: Type.String(), message: Type.String() });
+const detailsValidator = Compile(Type.Object({ recipientId: Type.String(), receiptId: Type.String(), path: Type.String(), message: Type.String() }));
 const communication: AgentToolPresentation = {
   summary(tool) {
-    if (Value.Check(detailsSchema, tool.details)) return tool.details.path;
+    if (detailsValidator.Check(tool.details)) return tool.details.path;
     const args = isJsonObject(tool.args) ? tool.args : undefined;
     const peer = args?.task_name ?? args?.target;
-    return Value.Check(Type.String(), peer) ? peer : undefined;
+    return isString(peer) ? peer : undefined;
   },
   detail(ctx, tool) {
-    if (!Value.Check(detailsSchema, tool.details)) return undefined;
+    if (!detailsValidator.Check(tool.details)) return undefined;
     const { recipientId, receiptId, path, message } = tool.details;
     return communicationCardHtml([
       { label: "Body", html: `<div class="agent-communication-body">${escapeHtml(message)}</div>` },

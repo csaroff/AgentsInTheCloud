@@ -1,6 +1,4 @@
-import { isJsonObject, type JsonValue } from "@agents-in-the-cloud/core";
-import { Type } from "typebox";
-import { Value } from "typebox/value";
+import { isJsonObject, isNumber, isString, type JsonValue } from "@agents-in-the-cloud/core";
 import { codexNotification, type CodexNotification, type Requests } from "./protocol.ts";
 
 export class CodexRpcError extends Error {}
@@ -24,7 +22,7 @@ export class CodexRpc {
   receive(line: string) {
     const message: unknown = JSON.parse(line);
     if (!isJsonObject(message)) throw new Error("Invalid Codex RPC message");
-    if (Value.Check(Type.String(), message.method)) {
+    if (isString(message.method)) {
       if (message.id !== undefined) {
         // Approval policy is never; unsupported interactive tools must fail visibly,
         // not leave Codex waiting indefinitely for a client response.
@@ -36,11 +34,11 @@ export class CodexRpc {
       }
       return;
     }
-    if (!Value.Check(Type.Number(), message.id)) throw new Error("Invalid Codex RPC response ID");
+    if (!isNumber(message.id)) throw new Error("Invalid Codex RPC response ID");
     const pending = this.pending.get(message.id);
     if (!pending) throw new Error(`Unknown Codex RPC response: ${message.id}`);
     if (message.error !== undefined) {
-      if (!isJsonObject(message.error) || !Value.Check(Type.String(), message.error.message)) throw new Error("Invalid Codex RPC error");
+      if (!isJsonObject(message.error) || !isString(message.error.message)) throw new Error("Invalid Codex RPC error");
       this.pending.delete(message.id);
       pending.reject(new CodexRpcError(message.error.message));
     } else {

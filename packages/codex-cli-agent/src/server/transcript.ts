@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
-import { getAgentsInTheCloudRuntimeContext } from "@agents-in-the-cloud/core";
+import { getAgentsInTheCloudRuntimeContext, isString } from "@agents-in-the-cloud/core";
 import { loadNativeTranscriptFiles, loadNativeTranscriptImage, nativeImageTypes, nativeJsonlRows, nativeSessionFiles, nativeTimestamp } from "@agents-in-the-cloud/cli-agent/server";
 import type { TranscriptRecord } from "@agents-in-the-cloud/agent/server/transcript";
 import { Type, type Static } from "typebox";
+import { Compile } from "typebox/compile";
 import { Value } from "typebox/value";
 
 const partSchema = Type.Object({ type: Type.String(), text: Type.Optional(Type.String()), image_url: Type.Optional(Type.String()) });
@@ -14,8 +15,8 @@ const payloadSchema = Type.Object({
   call_id: Type.Optional(Type.String()), output: Type.Optional(Type.Union([Type.String(), Type.Array(partSchema)])),
   status: Type.Optional(Type.String()), phase: Type.Optional(Type.String()),
 });
-const rowSchema = Type.Object({ type: Type.String(), timestamp: Type.Optional(Type.String()), payload: payloadSchema });
-const commandResultSchema = Type.Object({ output: Type.String(), exit_code: Type.Number(), stderr: Type.Optional(Type.String()) });
+const rowValidator = Compile(Type.Object({ type: Type.String(), timestamp: Type.Optional(Type.String()), payload: payloadSchema }));
+const commandResultValidator = Compile(Type.Object({ output: Type.String(), exit_code: Type.Number(), stderr: Type.Optional(Type.String()) }));
 type Part = Static<typeof partSchema>;
 
 function image(part: Part | undefined): { mimeType: string; data: string } | undefined {
@@ -27,13 +28,14 @@ function image(part: Part | undefined): { mimeType: string; data: string } | und
 function text(parts: Part[] | undefined): string {
   return (parts ?? []).filter((part) => part.type === "input_text" || part.type === "output_text" || part.type === "summary_text").map((part) => part.text ?? "").filter(Boolean).join("\n");
 }
-const execArgsSchema = Type.Object({ cmd: Type.String() });
+const execArgsValidator = Compile(Type.Object({ cmd: Type.String() }));
+const stringArgsValidator = Compile(Type.Record(Type.String(), Type.String()));
 function args(value: string | undefined): string | Record<string, string> {
   if (!value) return {};
   try {
     const parsed: unknown = JSON.parse(value);
-    if (Value.Check(execArgsSchema, parsed)) return { ...parsed, command: parsed.cmd };
-    if (Value.Check(Type.Record(Type.String(), Type.String()), parsed)) return parsed;
+    if (execArgsValidator.Check(parsed)) return { ...parsed, command: parsed.cmd };
+    if (stringArgsValidator.Check(parsed)) return parsed;
     return value;
   } catch { return value; }
 }
@@ -54,7 +56,7 @@ function execWrapperResult(output: string | Part[] | undefined): { text: string;
     if (!part.text) continue;
     let parsed: unknown;
     try { parsed = JSON.parse(part.text); } catch { continue; }
-    if (Value.Check(commandResultSchema, parsed)) return { text: [parsed.output, parsed.stderr].filter(Boolean).join("\n"), isError: parsed.exit_code !== 0, index };
+    if (commandResultValidator.Check(parsed)) return { text: [parsed.output, parsed.stderr].filter(Boolean).join("\n"), isError: parsed.exit_code !== 0, index };
   }
   return undefined;
 }
@@ -63,7 +65,7 @@ export function codexTranscriptRecords(jsonl: string, fallbackPrefix = "codex"):
   const records: TranscriptRecord[] = [];
   let index = 0;
   const wrappers = new Map<string, string>();
-  for (const row of nativeJsonlRows(jsonl, rowSchema)) {
+  for (const row of nativeJsonlRows(jsonl, rowValidator)) {
     if (row.type !== "response_item") continue; // event_msg duplicates response items
     const p = row.payload;
     const id = p.id ?? `${fallbackPrefix}-${index++}`;
@@ -90,7 +92,7 @@ export function codexTranscriptRecords(jsonl: string, fallbackPrefix = "codex"):
     } else if ((p.type === "function_call_output" || p.type === "custom_tool_call_output") && p.call_id) {
       const rest = wrappers.get(p.call_id);
       const shell = rest !== undefined ? execWrapperResult(p.output) : undefined;
-      records.push({ kind: "toolResult", callId: p.call_id, text: shell?.text ?? (Value.Check(Type.String(), p.output) ? p.output : text(p.output)), images: [], isError: shell?.isError ?? p.status === "failed", timestamp });
+      records.push({ kind: "toolResult", callId: p.call_id, text: shell?.text ?? (isString(p.output) ? p.output : text(p.output)), images: [], isError: shell?.isError ?? p.status === "failed", timestamp });
       if (rest && Array.isArray(p.output)) {
         records.push({ kind: "toolResult", callId: `${p.call_id}:rest`, text: text(p.output.slice((shell?.index ?? 0) + 1)), images: [], isError: p.status === "failed", timestamp });
       }
@@ -120,7 +122,7 @@ export async function loadCodexTranscript(workspaceId: string, sessionId: string
 export async function loadCodexTranscriptImage(workspaceId: string, sessionId: string, entryId: string, contentIndex: number): Promise<Response> {
   return loadNativeTranscriptImage(await codexHistoryFiles(workspaceId, sessionId), (jsonl, file) => {
     let index = 0;
-    for (const row of nativeJsonlRows(jsonl, rowSchema)) {
+    for (const row of nativeJsonlRows(jsonl, rowValidator)) {
       if (row.type !== "response_item") continue;
       const id = row.payload.id ?? `${basename(file, ".jsonl")}-${index++}`;
       if (id !== entryId || row.payload.type !== "message" || row.payload.role !== "user") continue;
@@ -131,12 +133,12 @@ export async function loadCodexTranscriptImage(workspaceId: string, sessionId: s
   });
 }
 
+const sessionMetaValidator = Compile(Type.Object({ type: Type.Literal("session_meta"), payload: Type.Object({ id: Type.String() }) }));
 /** Read the native ID from the tab-private rollout, never use workspace-wide --last. */
 export async function codexResumeId(workspaceId: string, sessionId: string): Promise<string | undefined> {
   const file = (await codexHistoryFiles(workspaceId, sessionId)).at(-1);
   if (!file) return undefined;
-  const schema = Type.Object({ type: Type.Literal("session_meta"), payload: Type.Object({ id: Type.String() }) });
-  const id = Array.from(nativeJsonlRows(await readFile(file, "utf8"), schema))[0]?.payload.id;
+  const id = Array.from(nativeJsonlRows(await readFile(file, "utf8"), sessionMetaValidator))[0]?.payload.id;
   if (!id) throw new Error(`Codex rollout has no native session ID: ${file}`);
   return id;
 }

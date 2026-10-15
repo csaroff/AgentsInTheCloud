@@ -2,7 +2,7 @@ import { finalAssistantTextIndexes, finalAssistantText, isFinalAssistantMessage 
 import { defineDoc, defineEntry, type ConversationId, type EntryRecord, type Tx } from "@earendil-works/pi-durable";
 import { type Message, type TextContent } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { Value } from "typebox/value";
+import { Compile } from "typebox/compile";
 
 export const maxConcurrentSubagents = 6;
 export const anchorTaskName = "agents-in-the-cloud.delegation-anchor";
@@ -37,12 +37,13 @@ const attributedSchema = Type.Object({
   type: Type.Literal("text"), text: Type.String(),
   agentsInTheCloudAgentMessage: Type.Object({ id: Type.String(), conversationId: Type.Number(), requestConversationId: Type.Optional(Type.Number()), author: Type.String(), recipient: Type.String(), kind: Type.Union([Type.Literal("task"), Type.Literal("message"), Type.Literal("completion")]) }),
 });
+const attributedValidator = Compile(attributedSchema);
 export const attributedMessagesSchema = Type.Array(Type.Object({ role: Type.Literal("user"), timestamp: Type.Number(), content: Type.Array(attributedSchema) }));
 export type AttributedText = TextContent & { agentsInTheCloudAgentMessage: { id: string; conversationId: ConversationId; requestConversationId?: ConversationId; author: string; recipient: string; kind: Receipt["kind"] } };
 export function attribution(message: Message) {
   if (message.role !== "user" || !Array.isArray(message.content) || message.content.length !== 1) return undefined;
   const part = message.content[0];
-  if (!Value.Check(attributedSchema, part)) return undefined;
+  if (!attributedValidator.Check(part)) return undefined;
   // SAFETY: The schema checks every field; the branded ID was written by journal admission.
   return part as AttributedText;
 }
