@@ -6,14 +6,10 @@
     "./server": "./src/server/index.ts"
   },
   "dependencies": {
+    "@agents-in-the-cloud/acp-agent": "workspace:*",
     "@agents-in-the-cloud/agent": "workspace:*",
     "@agents-in-the-cloud/cli-agent": "workspace:*",
-    "@agents-in-the-cloud/core": "workspace:*",
     "@agents-in-the-cloud/llm": "workspace:*",
-    "@agents-in-the-cloud/shared": "workspace:*",
-    "@agents-in-the-cloud/workspace": "workspace:*",
-    "@agents-in-the-cloud/design-system": "workspace:*",
-    "typebox": "^1.0.57",
-    "@agents-in-the-cloud/native-agent": "workspace:*"
+    "@agents-in-the-cloud/shared": "workspace:*"
   }
 }

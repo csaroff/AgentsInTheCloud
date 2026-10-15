@@ -1,0 +1,20 @@
+{
+  "name": "@agents-in-the-cloud/acp-agent",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./src/server/index.ts"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.8.0",
+    "@agents-in-the-cloud/agent": "workspace:*",
+    "@agents-in-the-cloud/cli-agent": "workspace:*",
+    "@agents-in-the-cloud/core": "workspace:*",
+    "@agents-in-the-cloud/design-system": "workspace:*",
+    "@agents-in-the-cloud/llm": "workspace:*",
+    "@agents-in-the-cloud/native-agent": "workspace:*",
+    "@agents-in-the-cloud/shared": "workspace:*",
+    "@agents-in-the-cloud/workspace": "workspace:*",
+    "typebox": "^1.0.57"
+  }
+}

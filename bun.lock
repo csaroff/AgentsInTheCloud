@@ -53,6 +53,21 @@
         "typebox": "^1.0.57",
       },
     },
+    "packages/acp-agent": {
+      "name": "@agents-in-the-cloud/acp-agent",
+      "dependencies": {
+        "@agentclientprotocol/sdk": "1.8.0",
+        "@agents-in-the-cloud/agent": "workspace:*",
+        "@agents-in-the-cloud/cli-agent": "workspace:*",
+        "@agents-in-the-cloud/core": "workspace:*",
+        "@agents-in-the-cloud/design-system": "workspace:*",
+        "@agents-in-the-cloud/llm": "workspace:*",
+        "@agents-in-the-cloud/native-agent": "workspace:*",
+        "@agents-in-the-cloud/shared": "workspace:*",
+        "@agents-in-the-cloud/workspace": "workspace:*",
+        "typebox": "^1.0.57",
+      },
+    },
     "packages/agent": {
       "name": "@agents-in-the-cloud/agent",
       "dependencies": {
@@ -149,20 +164,13 @@
     "packages/claude-agent": {
       "name": "@agents-in-the-cloud/claude-agent",
       "dependencies": {
+        "@agents-in-the-cloud/acp-agent": "workspace:*",
         "@agents-in-the-cloud/agent": "workspace:*",
         "@agents-in-the-cloud/claude-cli-agent": "workspace:*",
         "@agents-in-the-cloud/cli-agent": "workspace:*",
-        "@agents-in-the-cloud/core": "workspace:*",
-        "@agents-in-the-cloud/design-system": "workspace:*",
         "@agents-in-the-cloud/llm": "workspace:*",
-        "@agents-in-the-cloud/native-agent": "workspace:*",
         "@agents-in-the-cloud/shared": "workspace:*",
-        "@agents-in-the-cloud/workspace": "workspace:*",
-        "@anthropic-ai/claude-agent-sdk": "0.3.296",
-        "@anthropic-ai/sdk": "0.129.0",
-        "@modelcontextprotocol/sdk": "1.30.0",
         "typebox": "^1.0.57",
-        "zod": "4.6.5",
       },
     },
     "packages/claude-cli-agent": {
@@ -195,15 +203,11 @@
     "packages/codex-agent": {
       "name": "@agents-in-the-cloud/codex-agent",
       "dependencies": {
+        "@agents-in-the-cloud/acp-agent": "workspace:*",
         "@agents-in-the-cloud/agent": "workspace:*",
         "@agents-in-the-cloud/cli-agent": "workspace:*",
-        "@agents-in-the-cloud/core": "workspace:*",
-        "@agents-in-the-cloud/design-system": "workspace:*",
         "@agents-in-the-cloud/llm": "workspace:*",
-        "@agents-in-the-cloud/native-agent": "workspace:*",
         "@agents-in-the-cloud/shared": "workspace:*",
-        "@agents-in-the-cloud/workspace": "workspace:*",
-        "typebox": "^1.0.57",
       },
     },
     "packages/codex-cli-agent": {
@@ -560,6 +564,10 @@
     "@gespenst/core": "0.1.1",
   },
   "packages": {
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.8.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-fbP7qHZsFyTJVT0/RPrcWJ8An26qLXHEuGCHHEKDyxD1xpXV+Ejyh2LAE6vBAFePkpVjZeeohnbgvuEhZ7wLMg=="],
+
+    "@agents-in-the-cloud/acp-agent": ["@agents-in-the-cloud/acp-agent@workspace:packages/acp-agent"],
+
     "@agents-in-the-cloud/agent": ["@agents-in-the-cloud/agent@workspace:packages/agent"],
 
     "@agents-in-the-cloud/artifact-preview": ["@agents-in-the-cloud/artifact-preview@workspace:packages/artifact-preview"],
@@ -639,24 +647,6 @@
     "@agents-in-the-cloud/workspace-templates": ["@agents-in-the-cloud/workspace-templates@workspace:packages/workspace-templates"],
 
     "@agents-in-the-cloud/workspace-terminal": ["@agents-in-the-cloud/workspace-terminal@workspace:packages/workspace-terminal"],
-
-    "@anthropic-ai/claude-agent-sdk": ["@anthropic-ai/claude-agent-sdk@0.3.296", "", { "optionalDependencies": { "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.296", "@anthropic-ai/claude-agent-sdk-darwin-x64": "0.3.296", "@anthropic-ai/claude-agent-sdk-linux-arm64": "0.3.296", "@anthropic-ai/claude-agent-sdk-linux-arm64-musl": "0.3.296", "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.296", "@anthropic-ai/claude-agent-sdk-linux-x64-musl": "0.3.296", "@anthropic-ai/claude-agent-sdk-win32-arm64": "0.3.296", "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.296" }, "peerDependencies": { "@anthropic-ai/sdk": ">=0.93.0", "@modelcontextprotocol/sdk": "^1.29.0", "zod": "^4.0.0" } }, "sha512-Y+cZ2BT8X94mQ9GJOVyIqhjC/nWGvwozUVLjdkzX7aSt+zuo5tgk7Hdv9V7tEUQ9fKnEuiL6moYNWDeHqCD4Lw=="],
-
-    "@anthropic-ai/claude-agent-sdk-darwin-arm64": ["@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.296", "", { "os": "darwin", "cpu": "arm64" }, "sha512-Wrhy7rxQVUNowQRDpSZD+3MFSBAlN4TINZSpKD8PKpEValCG6x05N855MuITvwgkH0EeoyNLRCsowJaIHa8V9Q=="],
-
-    "@anthropic-ai/claude-agent-sdk-darwin-x64": ["@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.296", "", { "os": "darwin", "cpu": "x64" }, "sha512-klMOQ1TdA7u6sWZJYw9l5byWYxMiWzbuPhzCgVVY+LJOs4FlhsS3qLXn2RZmIFhQv1u65zwX+2CRSWEJddqfVQ=="],
-
-    "@anthropic-ai/claude-agent-sdk-linux-arm64": ["@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.296", "", { "os": "linux", "cpu": "arm64" }, "sha512-+tC1KlUlp/3BQS+EfG8RBrmru4xKwF6hNEm15gNct8k9tNVRLYOftbkNCGJPTKkoBoq0sQ+Omojzwr/W2Dg60A=="],
-
-    "@anthropic-ai/claude-agent-sdk-linux-arm64-musl": ["@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.296", "", { "os": "linux", "cpu": "arm64" }, "sha512-8DEazoBU4I8HsPrXgSJ1Vq30nCBF7PaKjHz1o/igCz+HZu3qepHztWpoKJKQee5Mt4XsvZLwtKuxQo1F+SC6yQ=="],
-
-    "@anthropic-ai/claude-agent-sdk-linux-x64": ["@anthropic-ai/claude-agent-sdk-linux-x64@0.3.296", "", { "os": "linux", "cpu": "x64" }, "sha512-TStCnbg2iBtWJBQeMdO7Xwpx5IYWICmdcf7J9eXhIi4JbahWD+VLRaH5sxB+LLZjdBXekp8piKv6Ne2+arag0w=="],
-
-    "@anthropic-ai/claude-agent-sdk-linux-x64-musl": ["@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.296", "", { "os": "linux", "cpu": "x64" }, "sha512-lMquemenM5CDNZv6g1+xBSfQpat2xiwOQUnY2mwSQKjT+IfE5/F8CgRd38ZBljwGnedPIuKs/DAZMt4YslLF5w=="],
-
-    "@anthropic-ai/claude-agent-sdk-win32-arm64": ["@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.296", "", { "os": "win32", "cpu": "arm64" }, "sha512-/epluPyoLm1NQAcHV0LUierKog7c9yyU8BgpZOtGWiM54nqTZKKBuCwANraV3ROfXYFfJdMV4Vehk/8fqxoOqQ=="],
-
-    "@anthropic-ai/claude-agent-sdk-win32-x64": ["@anthropic-ai/claude-agent-sdk-win32-x64@0.3.296", "", { "os": "win32", "cpu": "x64" }, "sha512-T71Y/hp0v7VtRzTOoxAsIkPa68JpB1d/VvCKTTE9GzTkbjQZHjs3S1DM06LDxSpwjITF7OCVJq14+XjN8M9t/g=="],
 
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.129.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw=="],
 
@@ -1347,6 +1337,12 @@
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
 
     "zwitch": ["zwitch@2.0.4", "", {}, "sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A=="],
+
+    "@agents-in-the-cloud/desktop/@hotwired/stimulus": ["@hotwired/stimulus@github:hotwired/dev-builds#339df54", {}, "hotwired-dev-builds-339df54", "sha512-mHNF9l1AaFMwHph9F+E6H9/MOtt8gIPSyNKMJELZOfYlh9rdmfmgXu6+EmC1NfjcA0tc6u+xn8PDoOjSzc9SGw=="],
+
+    "@agents-in-the-cloud/inline-content/@hotwired/stimulus": ["@hotwired/stimulus@github:hotwired/dev-builds#339df54", {}, "hotwired-dev-builds-339df54", "sha512-mHNF9l1AaFMwHph9F+E6H9/MOtt8gIPSyNKMJELZOfYlh9rdmfmgXu6+EmC1NfjcA0tc6u+xn8PDoOjSzc9SGw=="],
+
+    "@agents-in-the-cloud/web/@hotwired/stimulus": ["@hotwired/stimulus@github:hotwired/dev-builds#339df54", {}, "hotwired-dev-builds-339df54", "sha512-mHNF9l1AaFMwHph9F+E6H9/MOtt8gIPSyNKMJELZOfYlh9rdmfmgXu6+EmC1NfjcA0tc6u+xn8PDoOjSzc9SGw=="],
 
     "@aws-sdk/credential-provider-sso/@aws-sdk/token-providers": ["@aws-sdk/token-providers@3.1138.0", "", { "dependencies": { "@aws-sdk/core": "^3.978.1", "@aws-sdk/nested-clients": "^3.997.46", "@aws-sdk/types": "^3.974.6", "@smithy/core": "^3.35.0", "@smithy/types": "^4.19.0", "tslib": "^2.6.2" } }, "sha512-GpyAr0DD63YOEmYFM6Df+gJuIgC92MMTiBK4FTKfxii5MJ9ge20epR7LyroulscYlG89J+ZB2ivFDPjvfQhzdw=="],
 

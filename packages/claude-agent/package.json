@@ -6,19 +6,12 @@
     "./server": "./src/server/index.ts"
   },
   "dependencies": {
+    "@agents-in-the-cloud/acp-agent": "workspace:*",
     "@agents-in-the-cloud/agent": "workspace:*",
     "@agents-in-the-cloud/claude-cli-agent": "workspace:*",
     "@agents-in-the-cloud/cli-agent": "workspace:*",
-    "@agents-in-the-cloud/core": "workspace:*",
-    "@agents-in-the-cloud/design-system": "workspace:*",
     "@agents-in-the-cloud/llm": "workspace:*",
-    "@agents-in-the-cloud/native-agent": "workspace:*",
     "@agents-in-the-cloud/shared": "workspace:*",
-    "@agents-in-the-cloud/workspace": "workspace:*",
-    "@anthropic-ai/claude-agent-sdk": "0.3.296",
-    "@anthropic-ai/sdk": "0.129.0",
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "typebox": "^1.0.57",
-    "zod": "4.6.5"
+    "typebox": "^1.0.57"
   }
 }
