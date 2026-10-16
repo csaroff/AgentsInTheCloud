@@ -33,6 +33,8 @@ export class AcpRuntime {
   /** Tokens the turns of this session used, as their prompts report them. */
   tokens?: { input: number; output: number };
   private connection?: AcpConnection;
+  /** The connection being opened, which actions wait for. */
+  private connecting?: Promise<void>;
   private launch?: AcpLaunch;
   private sessionId?: string;
   /** History replays while a session loads; it carries no times. */
@@ -93,19 +95,36 @@ export class AcpRuntime {
     const name = text.trim().match(/^\/(\S+)/)?.[1];
     return Boolean(name && !this.templateNames.has(name) && !this.harness.hiddenCommands.includes(name) && this.state.commands.some(command => command.name === name));
   }
+  /** The pane presents at once; the agent connects meanwhile, and its saved conversation replays as it loads. */
   static async open(harness: AcpHarness, liveRegions: (runtime: AcpRuntime) => LiveRegion[], workspaceId: string, record: AcpAgentRecord, save: () => void, events: AgentsInTheCloudEventBus) {
     const runtime = new AcpRuntime(harness, workspaceId, record, save, events, liveRegions);
-    try { await runtime.connect(); return runtime; }
-    catch (error) { await runtime.dispose(); throw error; }
+    // A failed connection shows in the pane, and the next action reconnects.
+    void runtime.startConnection().catch(() => {});
+    return runtime;
+  }
+  /** Waits until the agent is connected, reconnecting after a failure. */
+  async activate() {
+    if (this.connecting) await this.connecting.catch(() => {});
+    if (this.failure) await this.reconnect();
+    this.assertOpen();
   }
   async reconnect() {
+    if (this.connecting) return this.connecting;
     return this.serialize(this.agentId, async () => {
       if (!this.failure) return;
       if (this.disposed || this.closing) throw new Error(`${this.label} Agent is closed`);
       await this.connection?.close();
       this.failure = undefined;
-      await this.connect();
+      await this.startConnection();
     });
+  }
+  private startConnection(): Promise<void> {
+    if (this.connecting) return this.connecting;
+    const connecting = this.connect();
+    this.connecting = connecting;
+    const settled = () => { if (this.connecting === connecting) this.connecting = undefined; };
+    void connecting.then(settled, settled);
+    return connecting;
   }
   private async connect() {
     this.prompts = 0;
@@ -119,6 +138,8 @@ export class AcpRuntime {
         permission: request => this.permission(request),
         failed: error => { if (this.connection === connection) { this.failure = error; this.changed(); } },
       });
+      // An Agent closed while it connected has no use for the connection.
+      if (this.disposed || this.closing) { await connection.close(); return; }
       if (this.record.savedBeforeAcp) await this.adoptSavedConversation(this.record.savedBeforeAcp);
       await this.openSession(this.record.acpSessionId ? { load: this.record.acpSessionId } : {});
       this.changed();
@@ -210,6 +231,7 @@ export class AcpRuntime {
     this.save();
   }
   async send(input: WorkspaceAgentInput, requestId: string) {
+    await this.activate();
     return this.serialize(this.agentId, async () => {
       this.assertOpen();
       const text = [input.text, ...input.attachmentNotes].filter(Boolean).join("\n\n");
@@ -333,6 +355,7 @@ export class AcpRuntime {
     this.changed();
   }
   async command(command: AcpCommand, requestId: string): Promise<AcpCommandResult> {
+    await this.activate();
     if (command.kind === "model") {
       await this.configure({ model: `${this.harness.provider}::${command.model}` });
       return { kind: "done", message: `Using ${this.selectedModel?.name ?? command.model}.` };
@@ -384,6 +407,7 @@ export class AcpRuntime {
     if (this.isBusy) throw invalidArguments(`Stop ${this.label} before ${action}`);
   }
   async stop() {
+    await this.activate();
     this.assertOpen();
     const { agent } = this.connection!;
     if (this.turnRunning) {
@@ -406,6 +430,7 @@ export class AcpRuntime {
     };
   }
   async configure(parameters: { model?: string; thinkingLevel?: string }) {
+    await this.activate();
     return this.serialize(this.agentId, async () => {
       this.assertOpen();
       if (this.isBusy) throw invalidArguments(`Stop ${this.label} before changing its model or thinking level`);

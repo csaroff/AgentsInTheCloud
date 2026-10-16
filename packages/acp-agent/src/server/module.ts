@@ -32,6 +32,7 @@ export function createAcpAgentModule(harness: AcpHarness) {
     createAgents: getEvents => createNativeAgents({
       store: () => createAcpAgentStore(harness.storeFile, label), settings: harness.settings,
       open: (workspaceId, record, save, events) => AcpRuntime.open(harness, runtime => rendering.liveRegions(runtime), workspaceId, record, save, events),
+      activate: runtime => runtime.activate(),
       newRecord: (selected): AcpAgentRecord => ({ id: crypto.randomUUID(), title: label, ...selected, submissions: [] }),
     }, getEvents),
     rendering,

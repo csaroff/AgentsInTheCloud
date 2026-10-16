@@ -127,3 +127,16 @@ test("a failed subagent stops with its error, and replayed subagents are not tim
     { type: "working", title: "worker", durationUnavailable: true, stoppedAt: 0, items: [{ type: "error", text: "Overloaded" }] },
   ] });
 });
+
+test("a turn whose subagent keeps working after it ended stays live until the subagent finishes", () => {
+  const conversation = state(2000, (current, receive) => {
+    current.addPrompt("Start a background helper", [], false, 1000);
+    receive({ sessionUpdate: "subagent_update", sessionId: "child", title: "worker", state: { state: "running" } }, text("agent_message_chunk", "It runs in the background.", "m1"));
+    current.endTurn("end_turn", 3000);
+  });
+  const working = projectAcpTranscript(conversation, true).find(item => item.type === "working");
+  expect(working).toMatchObject({ live: true, items: [{ type: "working", live: true }, { type: "text", text: "It runs in the background." }] });
+  expect(working).not.toHaveProperty("completedAt");
+  conversation.receive({ sessionUpdate: "subagent_update", sessionId: "child", state: { state: "idle", stopReason: "end_turn" } }, 4000);
+  expect(projectAcpTranscript(conversation, false).find(item => item.type === "working")).toMatchObject({ live: false, completedAt: 4000 });
+});

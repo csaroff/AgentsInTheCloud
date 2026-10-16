@@ -26,7 +26,7 @@ async function scenario(script: string) {
       const fake = acp.agent({ name: "fake" })
         .onRequest("initialize", () => ({ protocolVersion: 1, agentCapabilities: { loadSession: true }, _meta: { steering: { supported: true } } }))
         .onRequest("session/new", ({ params }) => { calls.push(["new", params]); const sessionId = open(); return { sessionId, configOptions: options(sessions.get(sessionId)) }; })
-        .onRequest("session/load", async ({ params, client }) => { calls.push(["load", params.sessionId]); const session = sessions.get(params.sessionId); session.mode = "default"; await updates(client, params.sessionId, session.history); return { configOptions: options(session) }; })
+        .onRequest("session/load", async ({ params, client }) => { calls.push(["load", params.sessionId]); await loadGate?.promise; const session = sessions.get(params.sessionId); session.mode = "default"; await updates(client, params.sessionId, session.history); return { configOptions: options(session) }; })
         .onRequest("session/fork", ({ params }) => { calls.push(["fork", params.sessionId]); const sessionId = open(); sessions.get(sessionId).history = [...sessions.get(params.sessionId).history]; return { sessionId, configOptions: options(sessions.get(sessionId)) }; })
         // One saved conversation per page.
         .onRequest("session/list", ({ params }) => {
@@ -56,6 +56,8 @@ async function scenario(script: string) {
       // How the agent answers the next steered prompt.
       let steer = () => ({ outcome: "injected" });
       const connections = [];
+      // Holds loading a session back, as a slow agent start would.
+      let loadGate;
       mock.module(source + "/connection.ts", () => ({
         async openAcpConnection(workspaceId, label, launch, handlers) {
           const connection = acp.client({ name: "test" })
@@ -90,6 +92,7 @@ async function scenario(script: string) {
         store: () => createAcpAgentStore("test-agents.json", "Test Agent"),
         settings: { prepare: async () => ({ model: "anthropic::claude-opus-5-5", thinkingLevel: "medium" }) },
         open: (workspaceId, record, save, events) => AcpRuntime.open(harness, () => [], workspaceId, record, save, events),
+        activate: runtime => runtime.activate(),
         newRecord: selected => ({ id: crypto.randomUUID(), title: "Test Agent", ...selected, submissions: [] }),
       }, () => events);
       const input = { text: "hello", images: [], attachmentNotes: [] };
@@ -346,6 +349,7 @@ test("an Agent saved before ACP continues the first of its conversations the age
   saved("unused-new", ["never-created"]);
   const loaded = async id => {
     const runtime = await agents.ready("workspace", id);
+    await runtime.activate();
     expect(runtime.record.savedBeforeAcp).toBeUndefined();
     return runtime.record.acpSessionId;
   };
@@ -390,5 +394,24 @@ test("a steered prompt turned down after the turn it aimed at ended leaves the A
   expect(runtime.isBusy).toBe(false);
   expect(busyEvents).toEqual([true, false]);
   expect(finished).toEqual([id]);
+  await agents.disposeAll();
+`));
+
+test("a saved Agent presents at once, and actions wait until its conversation has loaded", () => scenario(`
+  const id = await agents.create("workspace", { input });
+  prompts[0].end();
+  await settle();
+  await agents.disposeAll();
+  loadGate = Promise.withResolvers();
+  const runtime = await agents.ready("workspace", id);
+  expect(runtime.state.entries).toEqual([]);
+  const sent = runtime.send({ ...input, text: "after loading" }, "after");
+  await settle();
+  expect(prompts).toHaveLength(1);
+  loadGate.resolve();
+  await sent;
+  await settle();
+  expect(runtime.state.entries.map(entry => entry.text)).toEqual(["hello", "after loading"]);
+  expect(prompts).toHaveLength(2);
   await agents.disposeAll();
 `));

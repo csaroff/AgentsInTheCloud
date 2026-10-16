@@ -131,10 +131,14 @@ export function projectAcpTranscript(conversation: Pick<AcpState, "entries" | "s
     if (final?.type === "text") final.final = true;
     working.hasFinalAnswer = Boolean(final);
     working.live = turn.live;
-    const stamps = [working.startedAt, ...working.items.flatMap(item => item.timestamp === undefined ? [] : [item.timestamp]), end?.timestamp ?? 0].filter(Boolean);
+    // A subagent's work counts toward the turn that started it.
+    const stamps = [working.startedAt, ...working.items.flatMap(item => item.type === "working" ? [item.completedAt ?? item.stoppedAt ?? 0] : item.timestamp === undefined ? [] : [item.timestamp]), end?.timestamp ?? 0].filter(Boolean);
     // Replayed history has no times; it shows how a turn ended, not how long it took.
     if (!working.startedAt) working.durationUnavailable = true;
-    if (!turn.live) {
+    // A subagent can keep working after its parent's turn ends; the turn shows live until it finishes.
+    const delegating = working.items.some(item => item.type === "working" && item.live);
+    if (delegating) working.live = true;
+    else if (!turn.live) {
       const endedAt = Math.max(working.startedAt, ...stamps);
       if (end && end.stopReason !== "end_turn") working.stoppedAt = endedAt;
       else working.completedAt = endedAt;
