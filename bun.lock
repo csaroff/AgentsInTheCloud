@@ -208,6 +208,7 @@
         "@agents-in-the-cloud/cli-agent": "workspace:*",
         "@agents-in-the-cloud/llm": "workspace:*",
         "@agents-in-the-cloud/shared": "workspace:*",
+        "typebox": "^1.0.57",
       },
     },
     "packages/codex-cli-agent": {

@@ -1,4 +1,4 @@
-import type { McpServer } from "@agentclientprotocol/sdk";
+import type { McpServer, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { JsonObject } from "@agents-in-the-cloud/core";
 import type { SlashCommandSource } from "@agents-in-the-cloud/agent/server/builtin-slash-commands";
 import type { createCliModelSettings } from "@agents-in-the-cloud/cli-agent/server";
@@ -40,6 +40,12 @@ export interface AcpHarness {
   settings: ReturnType<typeof createCliModelSettings>;
   requireSetup(): Promise<void>;
   prepare(workspaceId: string, agentId: string): Promise<AcpLaunch>;
+  /**
+   * Whether an update reports the agent starting or finishing a turn. An agent that cannot
+   * add a steered prompt to a turn which just finished runs it as a turn of its own, which
+   * no prompt response reports on; these updates tell when that turn ends.
+   */
+  agentTurnStatus?(update: SessionUpdate): "active" | "idle" | undefined;
   /** Native tool calls that render like AgentsInTheCloud's own. */
   toolCall?(tool: AcpToolCall): ToolCallPresentation | undefined;
 }

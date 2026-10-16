@@ -1,9 +1,10 @@
 import type { ToolCallContent } from "@agentclientprotocol/sdk";
-import type { ToolView, TranscriptItem, WorkingTranscriptItem } from "@agents-in-the-cloud/agent/server/transcript";
+import type { SessionImageRef, ToolView, TranscriptItem, WorkingTranscriptItem } from "@agents-in-the-cloud/agent/server/transcript";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import type { AcpHarness, ToolCallPresentation } from "./harness.ts";
-import type { AcpEntry, AcpToolCall } from "./state.ts";
+import { nativeImageTypes } from "@agents-in-the-cloud/cli-agent/server";
+import { toolImages, type AcpEntry, type AcpState, type AcpSubagent, type AcpToolCall } from "./state.ts";
 
 const commandSchema = Type.Object({ command: Type.Union([Type.String(), Type.Array(Type.String())]) });
 const terminalExitSchema = Type.Object({ terminal_exit: Type.Object({ exit_code: Type.Number() }) });
@@ -50,7 +51,15 @@ function toolCall(tool: AcpToolCall): ToolCallPresentation {
 
 function resultText(tool: AcpToolCall): string {
   if (Value.Check(Type.String(), tool.rawOutput)) return tool.rawOutput;
+  // An agent's own record of an image result repeats the image's data.
+  if (toolImages(tool).length) return textContent(tool.content);
   return textContent(tool.content) || tool.output || (tool.rawOutput === undefined ? "" : JSON.stringify(tool.rawOutput, null, 2));
+}
+
+/** Images the tool returned, served by the Agent's image route under the tool's transcript key. */
+function resultImages(tool: AcpToolCall): SessionImageRef[] | undefined {
+  const images = toolImages(tool).flatMap((image, contentIndex) => nativeImageTypes.has(image.mimeType) ? [{ entryId: `tool:${tool.toolCallId}`, contentIndex, mimeType: image.mimeType }] : []);
+  return images.length ? images : undefined;
 }
 
 function toolView(tool: AcpToolCall, harness: Pick<AcpHarness, "toolCall">, live: boolean): ToolView {
@@ -61,6 +70,7 @@ function toolView(tool: AcpToolCall, harness: Pick<AcpHarness, "toolCall">, live
     status: tool.status === "failed" ? "error" : tool.status === "completed" ? "ok" : live ? "running" : "error",
     resultText: done ? resultText(tool) : tool.output || undefined,
     issuedAt: tool.startedAt,
+    resultImages: done ? resultImages(tool) : undefined,
     durationMs: tool.startedAt !== undefined && tool.endedAt !== undefined ? Math.max(0, tool.endedAt - tool.startedAt) : undefined,
     details: Value.Check(terminalExitSchema, tool._meta) ? { exitCode: tool._meta.terminal_exit.exit_code } : undefined,
   };
@@ -70,10 +80,44 @@ function planText(entries: Extract<AcpEntry, { kind: "plan" }>["entries"]): stri
   return entries.map(entry => `- [${entry.status === "completed" ? "x" : " "}] ${entry.content}`).join("\n");
 }
 
+/** An entry as an item of the work it belongs to; prompts and turn ends shape the turns instead. */
+function activityItem(entry: AcpEntry, live: boolean, conversation: Pick<AcpState, "subagents">, harness: Pick<AcpHarness, "toolCall">): TranscriptItem | undefined {
+  switch (entry.kind) {
+    case "user": return { type: "user", key: entry.key, text: entry.text, images: entry.images.map((image, contentIndex) => ({ entryId: entry.key, contentIndex, mimeType: image.mimeType })), steering: true, timestamp: entry.timestamp };
+    case "message": return entry.text.trim() ? { type: "text", key: entry.key, text: entry.text, final: false, live, timestamp: entry.timestamp } : undefined;
+    case "thought": return entry.text.trim() ? { type: "thinking", key: entry.key, text: entry.text, live, timestamp: entry.timestamp } : undefined;
+    case "tool": return { type: "tool", key: `tool:${entry.key}`, tool: toolView(entry.tool, harness, live), timestamp: entry.tool.startedAt };
+    case "plan": return { type: "text", key: entry.key, text: planText(entry.entries), final: false, timestamp: entry.timestamp };
+    case "note": return { type: "note", key: entry.key, text: entry.text, tone: entry.tone, timestamp: entry.timestamp };
+    case "subagent": return subagentSection(entry.key, conversation.subagents.get(entry.key)!, harness);
+    case "turn-end": return undefined;
+  }
+}
+
+/** A subagent's work, nested where its parent started it; its last reply stays inside with the rest. */
+function subagentSection(sessionId: string, subagent: AcpSubagent, harness: Pick<AcpHarness, "toolCall">): WorkingTranscriptItem {
+  const { conversation, running } = subagent;
+  const items = conversation.entries.flatMap(entry => activityItem(entry, running, conversation, harness) ?? []);
+  if (subagent.error) items.push({ type: "error", key: `subagent:${sessionId}:error`, text: subagent.error });
+  const startedAt = subagent.startedAt ?? 0;
+  const working: WorkingTranscriptItem = {
+    type: "working", key: `subagent:${sessionId}`, title: [subagent.title, subagent.description].filter(Boolean).join(" · ") || "Subagent",
+    startedAt, items, live: running, hasFinalAnswer: !running && items.findLast(item => item.type !== "note")?.type === "text",
+  };
+  if (!startedAt) working.durationUnavailable = true;
+  if (!running) {
+    const endedAt = Math.max(startedAt, subagent.endedAt ?? 0, ...items.flatMap(item => item.timestamp === undefined ? [] : [item.timestamp]));
+    if (subagent.stopReason && subagent.stopReason !== "end_turn") working.stoppedAt = endedAt;
+    else working.completedAt = endedAt;
+  }
+  return working;
+}
+
 interface Turn { prompt?: TranscriptItem; working: WorkingTranscriptItem; end?: Extract<AcpEntry, { kind: "turn-end" }>; live: boolean }
 
 /** ACP entries grouped like every other Agent's turns: a prompt, the work it caused, then the answer. */
-export function projectAcpTranscript(entries: readonly AcpEntry[], busy: boolean, harness: Pick<AcpHarness, "toolCall"> = {}): TranscriptItem[] {
+export function projectAcpTranscript(conversation: Pick<AcpState, "entries" | "subagents">, busy: boolean, harness: Pick<AcpHarness, "toolCall"> = {}): TranscriptItem[] {
+  const { entries } = conversation;
   const items: TranscriptItem[] = [];
   let turn: Turn | undefined;
   const lastPrompt = entries.findLastIndex(entry => entry.kind === "user" && !entry.steering);
@@ -114,16 +158,9 @@ export function projectAcpTranscript(entries: readonly AcpEntry[], busy: boolean
       return;
     }
     // The agent can start work of its own, such as reporting on a finished background task.
-    if (!turn) start(entry.key, entry.kind === "tool" ? entry.tool.startedAt : entry.timestamp, undefined, index);
-    const activity = turn!.working.items;
-    switch (entry.kind) {
-      case "user": activity.push({ type: "user", key: entry.key, text: entry.text, images: entry.images.map((image, contentIndex) => ({ entryId: entry.key, contentIndex, mimeType: image.mimeType })), steering: true, timestamp: entry.timestamp }); break;
-      case "message": if (entry.text.trim()) activity.push({ type: "text", key: entry.key, text: entry.text, final: false, live: turn!.live, timestamp: entry.timestamp }); break;
-      case "thought": if (entry.text.trim()) activity.push({ type: "thinking", key: entry.key, text: entry.text, live: turn!.live, timestamp: entry.timestamp }); break;
-      case "tool": activity.push({ type: "tool", key: `tool:${entry.key}`, tool: toolView(entry.tool, harness, turn!.live), timestamp: entry.tool.startedAt }); break;
-      case "plan": activity.push({ type: "text", key: entry.key, text: planText(entry.entries), final: false, timestamp: entry.timestamp }); break;
-      case "note": activity.push({ type: "note", key: entry.key, text: entry.text, tone: entry.tone, timestamp: entry.timestamp }); break;
-    }
+    if (!turn) start(entry.key, entry.kind === "tool" ? entry.tool.startedAt : entry.kind === "subagent" ? conversation.subagents.get(entry.key)!.startedAt : entry.timestamp, undefined, index);
+    const item = activityItem(entry, turn!.live, conversation, harness);
+    if (item) turn!.working.items.push(item);
   });
   finish();
   return items;

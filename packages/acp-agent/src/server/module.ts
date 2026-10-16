@@ -1,5 +1,8 @@
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { invalidArguments } from "@agents-in-the-cloud/core";
 import { createNativeAgentModule, createNativeAgentRendering, createNativeAgentRoutes, createNativeAgents, nativeAgentParameters as agentParameters } from "@agents-in-the-cloud/native-agent/server";
-import { nativeImageResponse } from "@agents-in-the-cloud/cli-agent/server";
+import { nativeImageResponse, nativeImageTypes } from "@agents-in-the-cloud/cli-agent/server";
 import { parseAcpCommand } from "./commands.ts";
 import type { AcpHarness } from "./harness.ts";
 import { renderCommandDialog } from "./render-command.ts";
@@ -12,7 +15,7 @@ export function createAcpAgentModule(harness: AcpHarness) {
   const { label, routeSegment } = harness;
   const rendering = createNativeAgentRendering<AcpRuntime>({
     channelName: harness.id, routeSegment,
-    transcript: runtime => projectAcpTranscript(runtime.state.entries, runtime.isBusy, harness),
+    transcript: runtime => projectAcpTranscript(runtime.state, runtime.isBusy, harness),
     stats(runtime) {
       const { usage } = runtime.state;
       const selection = runtime.selection;
@@ -35,15 +38,21 @@ export function createAcpAgentModule(harness: AcpHarness) {
     routes: agents => createNativeAgentRoutes(agents, rendering, {
       unknownCommand: `Choose a ${label} command`,
       parseCommand: parseAcpCommand,
-      runCommand: (runtime, command, { requestId }) => runtime.command(command, requestId),
+      runCommand(runtime, command, { requestId, field }) {
+        const cursor = field("cursor");
+        if (command.kind === "resume" && !command.sessionId && cursor != null) {
+          if (!Value.Check(Type.String({ minLength: 1, maxLength: 10000 }), cursor)) throw invalidArguments("Invalid conversation cursor");
+          command.cursor = cursor;
+        }
+        return runtime.command(command, requestId);
+      },
       renderCommandDialog: (runtime, result) => result.kind === "done" ? "" : renderCommandDialog(rendering.renderContext(runtime), result),
       promptText: runtime => runtime.state.entries.flatMap(entry => entry.kind === "user" ? [entry.text] : []).join("\n\n"),
       delivered: (runtime, requestId) => runtime.record.submissions.some(item => item.id === requestId),
       isHarnessCommand: (runtime, text) => runtime.isAgentCommand(text),
       sessionImage(runtime, entryId, index) {
-        const entry = runtime.state.entries.find(entry => entry.key === entryId);
-        const image = entry?.kind === "user" ? entry.images[index] : undefined;
-        return image ? nativeImageResponse(image.data, image.mimeType) : new Response("Image not found", { status: 404 });
+        const image = runtime.state.image(entryId, index);
+        return image && nativeImageTypes.has(image.mimeType) ? nativeImageResponse(image.data, image.mimeType) : new Response("Image not found", { status: 404 });
       },
     }),
     requireSetup: harness.requireSetup, settings: harness.settings,
@@ -52,8 +61,8 @@ export function createAcpAgentModule(harness: AcpHarness) {
       [`${path}/commands`]: {
         post: {
           summary: `Run /new, /fork, /resume or /model for a ${label} Agent`, parameters: agentParameters,
-          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["text"], properties: { text: { type: "string" }, argument: { type: "string" } } } } } },
-          responses: { "200": { description: "Saved conversations to resume" }, "202": { description: "Command accepted" } },
+          requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["text"], properties: { text: { type: "string" }, argument: { type: "string" }, cursor: { type: "string", description: "Continues /resume's list from its nextCursor" }, requestId: { type: "string" } } } } } },
+          responses: { "200": { description: "Saved conversations to resume, with nextCursor when there are more" }, "202": { description: "Command accepted" } },
         },
       },
       [`${path}/abort`]: { post: { summary: `Interrupt ${label}'s active turn`, parameters: agentParameters, responses: { "200": { description: "Interrupt requested" } } } },

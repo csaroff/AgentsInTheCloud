@@ -21,8 +21,9 @@ export function acpNativeCommands(source: SlashCommandSource, commands: readonly
   }));
 }
 
-export type AcpCommand = { kind: "new" | "fork" } | { kind: "resume"; sessionId?: string } | { kind: "model"; model: string };
-export type AcpCommandResult = { kind: "done"; message: string } | { kind: "resume"; sessions: SessionInfo[]; current?: string };
+/** `/resume` without a session lists saved conversations a page at a time, from the agent's cursor. */
+export type AcpCommand = { kind: "new" | "fork" } | { kind: "resume"; sessionId?: string; cursor?: string } | { kind: "model"; model: string };
+export type AcpCommandResult = { kind: "done"; message: string } | { kind: "resume"; sessions: SessionInfo[]; current?: string; nextCursor?: string };
 
 export function parseAcpCommand(text: string): AcpCommand | undefined {
   const match = text.trim().match(/^\/(new|fork|resume|model)(?:\s+([\s\S]*))?$/);

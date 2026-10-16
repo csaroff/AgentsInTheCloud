@@ -46,7 +46,8 @@ export async function openAcpConnection(workspaceId: string, label: string, laun
   try {
     initialized = await connection.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: {},
+      // Subagents run in sessions of their own, which the transcript nests where they started.
+      clientCapabilities: { subagents: {} },
       clientInfo: { name: "agents-in-the-cloud", title: "AgentsInTheCloud", version: "1.0.0" },
     });
   } catch (error) {

@@ -3,20 +3,20 @@ import { parseAcpAgentRecords } from "../src/server/store.ts";
 
 const submission = { id: "launch", digest: "d" };
 
-test("keeps the conversation of Agents saved before ACP", () => {
+test("Agents saved before ACP keep the conversations they may continue, for the agent to tell which exist", () => {
   expect(parseAcpAgentRecords({ agents: [
     // Claude Code named its session before creating it.
-    { id: "claude-fresh", title: "Claude Code", sessionId: "unused", submissions: [] },
     { id: "claude", title: "Claude Code", sessionId: "s1", model: "anthropic::claude-opus-5-5", submissions: [submission], commandSubmissions: [{ id: "c", digest: "d", message: "Conversation resumed." }] },
-    // An unstarted fork continues its original conversation.
+    // A fork continues in its own session once that has a message, and in its parent until then.
     { id: "claude-fork", title: "Claude Code", sessionId: "s2", forkedFrom: "s1", submissions: [submission] },
     { id: "codex", title: "Codex", threadId: "t1", submissions: [{ ...submission, accepted: true }], commandSubmissions: [{ id: "c", digest: "d", result: "{}" }] },
+    { id: "codex-fresh", title: "Codex", submissions: [] },
     { id: "acp", title: "Codex", acpSessionId: "a1", submissions: [] },
   ] })).toEqual([
-    { id: "claude-fresh", title: "Claude Code", submissions: [] },
-    { id: "claude", title: "Claude Code", acpSessionId: "s1", model: "anthropic::claude-opus-5-5", submissions: [submission], commandSubmissions: [{ id: "c", digest: "d", message: "Conversation resumed." }] },
-    { id: "claude-fork", title: "Claude Code", acpSessionId: "s1", submissions: [submission] },
-    { id: "codex", title: "Codex", acpSessionId: "t1", submissions: [submission], commandSubmissions: [] },
+    { id: "claude", title: "Claude Code", savedBeforeAcp: ["s1"], model: "anthropic::claude-opus-5-5", submissions: [submission], commandSubmissions: [{ id: "c", digest: "d", message: "Conversation resumed." }] },
+    { id: "claude-fork", title: "Claude Code", savedBeforeAcp: ["s2", "s1"], submissions: [submission] },
+    { id: "codex", title: "Codex", savedBeforeAcp: ["t1"], submissions: [submission], commandSubmissions: [] },
+    { id: "codex-fresh", title: "Codex", submissions: [] },
     { id: "acp", title: "Codex", acpSessionId: "a1", submissions: [] },
   ]);
 });

@@ -25,7 +25,7 @@ test("a prompt's work groups its thinking and tools, and its last reply answers 
     text("agent_message_chunk", "All ", "m3"), text("agent_message_chunk", "fixed.", "m3"));
     current.endTurn("end_turn", 5000);
   });
-  expect(projectAcpTranscript(conversation.entries, false)).toEqual([
+  expect(projectAcpTranscript(conversation, false)).toEqual([
     { type: "user", key: "entry-0", text: "Fix it", images: [{ entryId: "entry-0", contentIndex: 0, mimeType: "image/png" }], timestamp: 1000 },
     { type: "working", key: "entry-0:working", startedAt: 1000, live: false, hasFinalAnswer: true, completedAt: 5000, items: [
       { type: "thinking", key: "entry-1", text: "Let me look.", live: false, timestamp: 2000 },
@@ -46,7 +46,7 @@ test("a running turn is live and shows prompts that steer it", () => {
     current.addPrompt("Also this", [], true, 1500);
     receive(text("agent_message_chunk", "Working on both", "m1"));
   });
-  const [prompt, working, ...rest] = projectAcpTranscript(conversation.entries, true);
+  const [prompt, working, ...rest] = projectAcpTranscript(conversation, true);
   expect(prompt).toMatchObject({ type: "user", text: "Start" });
   expect(rest).toEqual([]);
   expect(working).toMatchObject({ type: "working", live: true, hasFinalAnswer: false, items: [
@@ -66,7 +66,7 @@ test("replayed history shows how turns ended without timing them, and the agent'
   ));
   conversation.endTurn("cancelled", 9000);
   conversation.receive(text("agent_message_chunk", "The background task finished.", "a2"), 9500);
-  const items = projectAcpTranscript(conversation.entries, false);
+  const items = projectAcpTranscript(conversation, false);
   expect(items.map(item => item.type)).toEqual(["user", "working", "text", "user", "working", "working", "text"]);
   expect(items[0]).toMatchObject({ text: "First", images: [{ entryId: "entry-0", contentIndex: 0 }] });
   expect(items[1]).toMatchObject({ durationUnavailable: true, completedAt: 0, items: [{ type: "tool", tool: { status: "error" } }] });
@@ -83,7 +83,7 @@ test("a failed prompt shows its error, and the agent's notices and plans join th
     { sessionUpdate: "notice", severity: "warning", title: "Rate limited", description: "Retrying soon." });
     current.endTurn("error", 3000, "Overloaded");
   });
-  expect(projectAcpTranscript(conversation.entries, false)).toEqual([
+  expect(projectAcpTranscript(conversation, false)).toEqual([
     { type: "user", key: "entry-0", text: "Plan it", images: [], timestamp: 1000 },
     { type: "working", key: "entry-0:working", startedAt: 1000, live: false, hasFinalAnswer: false, stoppedAt: 3000, items: [
       { type: "text", key: "entry-1", text: "- [x] Read\n- [x] Write", final: false, timestamp: 2000 },
@@ -91,4 +91,39 @@ test("a failed prompt shows its error, and the agent's notices and plans join th
     ] },
     { type: "error", key: "entry-3:error", text: "Overloaded" },
   ]);
+});
+
+test("a subagent's work nests where its parent started it, and keeps its last reply inside", () => {
+  const conversation = state(2000, (current, receive) => {
+    current.addPrompt("Ask a helper", [], false, 1000);
+    receive({ sessionUpdate: "tool_call", toolCallId: "spawn", title: "List files", kind: "think", status: "completed", rawOutput: "Async agent launched" },
+      { sessionUpdate: "subagent_update", sessionId: "child", title: "general-purpose", description: "List files", capabilities: { cancel: {} }, state: { state: "running" } });
+    current.subagentConversation("child")!.receive({ sessionUpdate: "tool_call", toolCallId: "ls", title: "ls", kind: "execute", status: "completed", rawInput: { command: "ls" }, rawOutput: "notes.txt" }, 2500);
+    current.subagentConversation("child")!.receive(text("agent_message_chunk", "Found notes.txt.", "c1"), 3000);
+  });
+  const running = projectAcpTranscript(conversation, true)[1];
+  expect(running).toMatchObject({ type: "working", items: [
+    { type: "tool", tool: { name: "List files" } },
+    { type: "working", key: "subagent:child", title: "general-purpose · List files", startedAt: 2000, live: true, hasFinalAnswer: false, items: [
+      { type: "tool", key: "tool:ls", tool: { name: "bash", status: "ok", resultText: "notes.txt" } },
+      { type: "text", key: "child:entry-0", text: "Found notes.txt.", live: true },
+    ] },
+  ] });
+  expect(conversation.runningSubagents().map(({ sessionId }) => sessionId)).toEqual(["child"]);
+  conversation.receive({ sessionUpdate: "subagent_update", sessionId: "child", state: { state: "idle", stopReason: "end_turn" } }, 4000);
+  conversation.endTurn("end_turn", 4500);
+  const [, working] = projectAcpTranscript(conversation, false);
+  expect(working).toMatchObject({ items: [{ type: "tool" }, { type: "working", live: false, completedAt: 4000, hasFinalAnswer: true }] });
+  expect(conversation.runningSubagents()).toEqual([]);
+});
+
+test("a failed subagent stops with its error, and replayed subagents are not timed", () => {
+  const conversation = state(undefined, (_, receive) => receive(
+    text("user_message_chunk", "Delegate", "u1"),
+    { sessionUpdate: "subagent_update", sessionId: "child", title: "worker" },
+    { sessionUpdate: "subagent_update", sessionId: "child", state: { state: "idle", stopReason: "error", error: { code: -32603, message: "Overloaded" } } },
+  ));
+  expect(projectAcpTranscript(conversation, false)[1]).toMatchObject({ items: [
+    { type: "working", title: "worker", durationUnavailable: true, stoppedAt: 0, items: [{ type: "error", text: "Overloaded" }] },
+  ] });
 });

@@ -21,10 +21,33 @@ export type AcpEntry =
   | { kind: "tool"; key: string; tool: AcpToolCall }
   | { kind: "plan"; key: string; entries: PlanEntry[]; timestamp?: number }
   | { kind: "note"; key: string; text: string; tone: "warning" | "summary"; timestamp?: number }
+  /** Where the agent started a subagent; its work lives in `subagents` under this key. */
+  | { kind: "subagent"; key: string }
   /** The prompt's response: how its turn ended. */
   | { kind: "turn-end"; key: string; stopReason: StopReason | "error"; error?: string; timestamp: number };
 
 const terminalOutputSchema = Type.Object({ terminal_output_delta: Type.Object({ data: Type.String() }) });
+const stopReasonSchema = Type.Object({ stopReason: Type.String() });
+const stopErrorSchema = Type.Object({ error: Type.Object({ message: Type.String() }) });
+
+/** A child session the agent delegated work to, as its parent announced it. */
+export interface AcpSubagent {
+  conversation: AcpState;
+  title?: string;
+  description?: string;
+  running: boolean;
+  /** Whether the agent can stop this child on its own. */
+  cancellable: boolean;
+  stopReason?: string;
+  error?: string;
+  startedAt?: number;
+  endedAt?: number;
+}
+
+/** Images a tool returned, in the order its content lists them. */
+export function toolImages(tool: Pick<ToolCall, "content">): AcpImage[] {
+  return (tool.content ?? []).flatMap(part => part.type === "content" && part.content.type === "image" ? [{ mimeType: part.content.mimeType, data: part.content.data }] : []);
+}
 
 function contentText(content: ContentBlock): string {
   if (content.type === "text") return content.text;
@@ -40,7 +63,10 @@ export class AcpState {
   configOptions: SessionConfigOption[] = [];
   usage?: UsageUpdate;
   readonly notices: string[] = [];
+  readonly subagents = new Map<string, AcpSubagent>();
   private nextKey = 0;
+  /** Children prefix their keys, so a transcript can hold a parent's and its children's entries. */
+  constructor(private readonly keyPrefix = "") {}
   /** Starts over for another session, before its history replays. */
   reset() {
     this.entries = [];
@@ -48,10 +74,56 @@ export class AcpState {
     this.configOptions = [];
     this.usage = undefined;
     this.notices.length = 0;
+    this.subagents.clear();
   }
-  private key() { return `entry-${this.nextKey++}`; }
+  private key() { return `${this.keyPrefix}entry-${this.nextKey++}`; }
+  /** The conversation of a session this one delegated to, at any depth. */
+  subagentConversation(sessionId: string): AcpState | undefined {
+    for (const [id, subagent] of this.subagents) {
+      if (id === sessionId) return subagent.conversation;
+      const nested = subagent.conversation.subagentConversation(sessionId);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+  /** Running children at any depth, with the session each runs in. */
+  runningSubagents(): Array<{ sessionId: string; subagent: AcpSubagent }> {
+    return [...this.subagents].flatMap(([sessionId, subagent]) => [...subagent.running ? [{ sessionId, subagent }] : [], ...subagent.conversation.runningSubagents()]);
+  }
   addPrompt(text: string, images: AcpImage[], steering: boolean, timestamp: number) {
-    this.entries.push({ kind: "user", key: this.key(), text, images, steering, timestamp });
+    const entry: Extract<AcpEntry, { kind: "user" }> = { kind: "user", key: this.key(), text, images, steering, timestamp };
+    this.entries.push(entry);
+    return entry;
+  }
+  /**
+   * A steered prompt that missed its turn starts the next one: it follows the end of the turn
+   * it missed, and precedes anything its own turn already reported.
+   */
+  startNextTurn(entry: Extract<AcpEntry, { kind: "user" }>) {
+    const position = this.entries.indexOf(entry);
+    this.entries.splice(position, 1);
+    const missed = this.entries.findIndex((next, index) => index >= position && next.kind === "turn-end");
+    entry.steering = false;
+    this.entries.splice(missed === -1 ? this.entries.length : missed + 1, 0, entry);
+  }
+  /** Whether the agent reported nothing yet for the turn this prompt started. */
+  untouched(entry: Extract<AcpEntry, { kind: "user" }>) {
+    return this.entries.slice(this.entries.indexOf(entry) + 1).every(next => next.kind === "user" || next.kind === "turn-end");
+  }
+  /** An image of a prompt, or of a tool's result by its transcript key, in this conversation or a subagent's. */
+  image(entryId: string, index: number): AcpImage | undefined {
+    const entry = this.entries.find(entry => entry.key === entryId || (entry.kind === "tool" && `tool:${entry.key}` === entryId));
+    if (entry?.kind === "user") return entry.images[index];
+    if (entry?.kind === "tool") return toolImages(entry.tool)[index];
+    for (const subagent of this.subagents.values()) {
+      const image = subagent.conversation.image(entryId, index);
+      if (image) return image;
+    }
+    return undefined;
+  }
+  /** A prompt the agent turned down never joined the conversation. */
+  removeEntry(entry: AcpEntry) {
+    this.entries = this.entries.filter(existing => existing !== entry);
   }
   endTurn(stopReason: StopReason | "error", timestamp: number, error?: string) {
     this.entries.push({ kind: "turn-end", key: this.key(), stopReason, error, timestamp });
@@ -116,6 +188,26 @@ export class AcpState {
       case "notice":
         this.entries.push({ kind: "note", key: this.key(), text: [update.title, update.description].filter(Boolean).join("\n\n"), tone: "warning", timestamp });
         break;
+      case "subagent_update": {
+        let subagent = this.subagents.get(update.sessionId);
+        if (!subagent) {
+          subagent = { conversation: new AcpState(`${update.sessionId}:`), running: false, cancellable: false, startedAt: timestamp };
+          this.subagents.set(update.sessionId, subagent);
+          this.entries.push({ kind: "subagent", key: update.sessionId });
+        }
+        if (update.title != null) subagent.title = update.title;
+        if (update.description != null) subagent.description = update.description;
+        if (update.capabilities != null) subagent.cancellable = update.capabilities.cancel != null;
+        const state = update.state;
+        if (state?.state === "running" || state?.state === "requires_action") subagent.running = true;
+        else if (state?.state === "idle") {
+          subagent.running = false;
+          subagent.stopReason = Value.Check(stopReasonSchema, state) ? state.stopReason : undefined;
+          subagent.error = Value.Check(stopErrorSchema, state) ? state.error.message : undefined;
+          subagent.endedAt = timestamp;
+        }
+        break;
+      }
       case "compaction_update":
         if (update.status === "completed") this.entries.push({ kind: "note", key: this.key(), text: "Compacted the conversation.", tone: "summary", timestamp });
         break;

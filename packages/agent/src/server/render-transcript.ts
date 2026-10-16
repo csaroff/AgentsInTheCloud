@@ -129,10 +129,11 @@ function workingSummary(ctx: AgentRenderContext, section: WorkingTranscriptItem)
   const active = endedAt === undefined;
   const duration = formatDuration(active ? Date.now() - section.startedAt : section.timing?.elapsedMs ?? (endedAt! - section.startedAt));
   const stateLabel = active ? "Working" : section.completedAt !== undefined ? "Completed" : "Stopped";
-  const activityLabel = section.durationUnavailable ? stateLabel : `${stateLabel} · ${duration}`;
+  // The title of delegated work comes last: it can be long enough to be cut off.
+  const activityLabel = [stateLabel, section.durationUnavailable ? "" : duration, section.title].filter(Boolean).join(" · ");
   const status = active ? `<i class="status-dot running${ctx.readOnly ? " static" : ""} content-row__status" aria-label="In progress"></i>` : "";
   return { ...transcriptRowContent({ kind: "text", text: activityLabel,
-    attributesHtml: active && !ctx.readOnly && !section.durationUnavailable ? `data-controller="agent-elapsed" data-agent-elapsed-since-value="${section.startedAt}" data-agent-elapsed-prefix-value="Working · " data-agent-elapsed-format-value="duration"` : undefined,
+    attributesHtml: active && !ctx.readOnly && !section.durationUnavailable ? `data-controller="agent-elapsed" data-agent-elapsed-since-value="${section.startedAt}" data-agent-elapsed-prefix-value="Working · "${section.title ? ` data-agent-elapsed-suffix-value=" · ${escapeHtml(section.title)}"` : ""} data-agent-elapsed-format-value="duration"` : undefined,
     textAttributesHtml: active && !ctx.readOnly && !section.durationUnavailable ? 'data-agent-elapsed-target="time"' : undefined,
   }, {
     leadingHtml: status, trailingHtml: `${steeringCount ? `<span class="agent-working-timing">${steeringCount} steering ${steeringCount === 1 ? "message" : "messages"}</span>` : ""}${active ? "" : renderWorkingTiming(section)}`,

@@ -12,7 +12,7 @@ import { renderSlashCommandCatalog } from "@agents-in-the-cloud/agent/server/sla
 import { acpAgentCommands, acpNativeCommands, type AcpCommand, type AcpCommandResult } from "./commands.ts";
 import { openAcpConnection, type AcpConnection } from "./connection.ts";
 import type { AcpHarness, AcpLaunch } from "./harness.ts";
-import { AcpState } from "./state.ts";
+import { AcpState, type AcpEntry } from "./state.ts";
 import type { AcpAgentRecord } from "./store.ts";
 
 const steeringResultSchema = Type.Object({ outcome: Type.String() });
@@ -41,6 +41,19 @@ export class AcpRuntime {
   private early: SessionNotification[] = [];
   /** Prompts whose turns have not ended. */
   private prompts = 0;
+  /** Turns the agent started itself from a steered prompt; see `AcpHarness.agentTurnStatus`. */
+  private agentTurns = 0;
+  /** Steered prompts the agent has not yet placed in a turn. */
+  private steering = 0;
+  /**
+   * The agent's turns seen while a steered prompt was on its way. The prompt's own turn can
+   * start and even finish before the agent answers that it started one.
+   */
+  private steeredTurn: "none" | "active" | "finished" = "none";
+  /** `receive` advances the steered turn while a steering request awaits its answer. */
+  private steeredTurnFinished() { return this.steeredTurn === "finished"; }
+  /** Stop was asked for since the agent's own turn began, so it ends stopped. */
+  private stopping = false;
   private busy = false;
   private disposed = false;
   private closing = false;
@@ -52,7 +65,9 @@ export class AcpRuntime {
     this.presentation = createLivePresentation(() => liveRegions(this), 50);
   }
   get agentId() { return this.record.id; }
-  get isBusy() { return !this.failure && this.prompts > 0; }
+  /** A prompt's turn runs, or a subagent works on, which the agent reports on once it finishes. */
+  get isBusy() { return !this.failure && (this.turnRunning || this.state.runningSubagents().length > 0); }
+  private get turnRunning() { return this.prompts > 0 || this.agentTurns > 0 || this.steering > 0; }
   private get label() { return this.harness.label; }
   private changed() {
     if (this.disposed) return;
@@ -94,6 +109,8 @@ export class AcpRuntime {
   }
   private async connect() {
     this.prompts = 0;
+    this.agentTurns = 0;
+    this.steering = 0;
     try {
       const launch = this.launch = await this.harness.prepare(this.workspaceId, this.agentId);
       this.instructions = launch.instructions;
@@ -102,6 +119,7 @@ export class AcpRuntime {
         permission: request => this.permission(request),
         failed: error => { if (this.connection === connection) { this.failure = error; this.changed(); } },
       });
+      if (this.record.savedBeforeAcp) await this.adoptSavedConversation(this.record.savedBeforeAcp);
       await this.openSession(this.record.acpSessionId ? { load: this.record.acpSessionId } : {});
       this.changed();
     } catch (error) {
@@ -110,6 +128,21 @@ export class AcpRuntime {
       await this.connection?.close();
       throw error;
     }
+  }
+  /** Continues the first conversation from before ACP that the agent still has, or none. */
+  private async adoptSavedConversation(candidates: string[]) {
+    const existing = new Set<string>();
+    let cursor: string | undefined;
+    // Stop paging once the preferred conversation turns up.
+    do {
+      const page = await this.connection!.agent.request("session/list", { cwd: workspaceRoot, cursor });
+      for (const session of page.sessions) existing.add(session.sessionId);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor && !existing.has(candidates[0]!));
+    const found = candidates.find(id => existing.has(id));
+    if (found) this.record.acpSessionId = found;
+    delete this.record.savedBeforeAcp;
+    this.save();
   }
   /** Opens a fresh, saved or forked session in place of the current one, which the agent then closes. */
   private async openSession(target: { load?: string; fork?: string }) {
@@ -188,33 +221,77 @@ export class AcpRuntime {
         if (previous.digest !== digest) throw invalidArguments("This request ID was already used for a different prompt");
         return;
       }
-      this.record.submissions.push({ id: requestId, digest });
+      const submission = { id: requestId, digest };
+      this.record.submissions.push(submission);
       this.record.acpSessionId = this.sessionId;
       this.save();
       const images = input.images.map(image => ({ mimeType: image.mimeType, data: image.data }));
-      if (this.prompts > 0 && this.connection!.steering) {
-        this.state.addPrompt(text, images, true, Date.now());
+      if (this.turnRunning && this.connection!.steering) {
+        const entry = this.state.addPrompt(text, images, true, Date.now());
+        // Only a definite answer from the agent withdraws the prompt; a lost reply may have delivered it.
+        const withdraw = () => {
+          this.record.submissions = this.record.submissions.filter(existing => existing !== submission);
+          this.save();
+          this.state.removeEntry(entry);
+          this.changed();
+        };
+        this.steering++;
+        this.steeredTurn = "none";
         this.changed();
-        const result = await this.connection!.agent.request<unknown>("_session/steering", { sessionId: this.sessionId, prompt, _meta: { steering: { idleBehavior: "promptRequired" } } });
-        if (!Value.Check(steeringResultSchema, result)) throw new Error(`${this.label} answered steering with an unexpected result`);
-        if (result.outcome === "injected") return;
-        if (result.outcome !== "promptRequired") throw new Error(`${this.label} could not add this prompt to its running turn (${result.outcome})`);
-        // The turn ended meanwhile, so this prompt starts the next one.
-        const entry = this.state.entries.findLast(entry => entry.kind === "user");
-        if (entry?.kind === "user") entry.steering = false;
-      } else this.state.addPrompt(text, images, false, Date.now());
-      this.prompt(prompt);
+        try { await this.steer(prompt, entry, submission, withdraw); }
+        finally {
+          // Settled once its outcome is applied, so the Agent never looks idle in between,
+          // and published either way: the turn it aimed at can have ended meanwhile.
+          this.steering--;
+          this.changed();
+        }
+        return;
+      }
+      this.prompt(prompt, this.state.addPrompt(text, images, false, Date.now()), submission);
       this.changed();
     });
   }
+  /** Adds a prompt to the running turn, or starts the next turn with it if that turn just ended. */
+  private async steer(prompt: ContentBlock[], entry: Extract<AcpEntry, { kind: "user" }>, submission: AcpAgentRecord["submissions"][number], withdraw: () => void) {
+    let result: unknown;
+    try { result = await this.connection!.agent.request<unknown>("_session/steering", { sessionId: this.sessionId, prompt, _meta: { steering: { idleBehavior: "promptRequired" } } }); }
+    catch (error) {
+      if (error instanceof RequestError) withdraw();
+      throw error;
+    }
+    if (!Value.Check(steeringResultSchema, result)) throw new Error(`${this.label} answered steering with an unexpected result`);
+    if (result.outcome === "injected") return;
+    if (result.outcome === "failed") {
+      withdraw();
+      throw new Error(`${this.label} couldn’t take this prompt. Try sending it again.`);
+    }
+    // The turn ended meanwhile, so this prompt starts the next one.
+    this.state.startNextTurn(entry);
+    if (result.outcome === "startedNewTurn") {
+      if (!this.harness.agentTurnStatus) throw new Error(`${this.label} started a turn this Agent can’t follow (${result.outcome})`);
+      this.stopping = false;
+      if (this.steeredTurnFinished()) this.state.endTurn("end_turn", Date.now());
+      else this.agentTurns++;
+      return;
+    }
+    if (result.outcome !== "promptRequired") throw new Error(`${this.label} answered steering with an unknown outcome (${result.outcome})`);
+    this.prompt(prompt, entry, submission);
+  }
   /** A prompt's turn runs until its response; updates stream meanwhile. */
-  private prompt(prompt: ContentBlock[]) {
+  private prompt(prompt: ContentBlock[], entry: Extract<AcpEntry, { kind: "user" }>, submission: AcpAgentRecord["submissions"][number]) {
     const connection = this.connection!;
     const sessionId = this.sessionId!;
     this.prompts++;
     void connection.agent.request("session/prompt", { sessionId, prompt }).then(
       response => this.turnEnded(connection, sessionId, response.stopReason, response.usage),
-      error => this.turnEnded(connection, sessionId, "error", undefined, error instanceof Error ? error.message : String(error)),
+      error => {
+        // Turned down before any work: the prompt stays on screen with its error, and its request ID is free to send it again.
+        if (error instanceof RequestError && this.state.untouched(entry)) {
+          this.record.submissions = this.record.submissions.filter(existing => existing !== submission);
+          this.save();
+        }
+        this.turnEnded(connection, sessionId, "error", undefined, error instanceof Error ? error.message : String(error));
+      },
     );
   }
   private turnEnded(connection: AcpConnection, sessionId: string, stopReason: StopReason | "error", usage: PromptResponse["usage"], error?: string) {
@@ -239,8 +316,19 @@ export class AcpRuntime {
   private receive(notification: SessionNotification) {
     if (this.disposed) return;
     if (this.sessionId === undefined) { this.early.push(notification); return; }
-    if (notification.sessionId !== this.sessionId) return;
-    this.state.receive(notification.update, this.replaying ? undefined : Date.now());
+    const conversation = notification.sessionId === this.sessionId ? this.state : this.state.subagentConversation(notification.sessionId);
+    if (!conversation) return;
+    const timestamp = this.replaying ? undefined : Date.now();
+    conversation.receive(notification.update, timestamp);
+    const status = conversation === this.state ? this.harness.agentTurnStatus?.(notification.update) : undefined;
+    // The turn that was running when a steered prompt was sent ends idle without starting; only a turn that starts afterwards is the prompt's.
+    if (status === "active" && this.steering > 0) this.steeredTurn = "active";
+    else if (status === "idle" && this.steering > 0 && this.steeredTurn === "active") this.steeredTurn = "finished";
+    else if (status === "idle" && this.agentTurns > 0) {
+      this.agentTurns--;
+      this.state.endTurn(this.stopping ? "cancelled" : "end_turn", timestamp ?? Date.now());
+      this.stopping = false;
+    }
     if (notification.update.sessionUpdate === "available_commands_update" && !this.replaying) void this.refreshCompletionCatalog().catch(error => console.error(`Could not refresh ${this.label} completions`, error));
     this.changed();
   }
@@ -253,8 +341,8 @@ export class AcpRuntime {
       this.assertOpen();
       if (command.kind === "resume" && !command.sessionId) {
         this.requireIdle("switching conversations");
-        const { sessions } = await this.connection!.agent.request("session/list", { cwd: workspaceRoot });
-        return { kind: "resume", sessions, current: this.record.acpSessionId };
+        const { sessions, nextCursor } = await this.connection!.agent.request("session/list", { cwd: workspaceRoot, cursor: command.cursor });
+        return { kind: "resume", sessions, current: this.record.acpSessionId, nextCursor: nextCursor ?? undefined };
       }
       if (this.record.submissions.some(entry => entry.id === requestId)) throw invalidArguments("This request ID was already used for a prompt");
       const digest = createHash("sha256").update(JSON.stringify(command)).digest("hex");
@@ -297,7 +385,13 @@ export class AcpRuntime {
   }
   async stop() {
     this.assertOpen();
-    if (this.prompts > 0) await this.connection!.agent.notify("session/cancel", { sessionId: this.sessionId! });
+    const { agent } = this.connection!;
+    if (this.turnRunning) {
+      this.stopping = this.agentTurns > 0;
+      await agent.notify("session/cancel", { sessionId: this.sessionId! });
+    }
+    // Background subagents keep working after their parent's turn; each stops on its own.
+    await Promise.all(this.state.runningSubagents().filter(({ subagent }) => subagent.cancellable).map(({ sessionId }) => agent.notify("session/cancel", { sessionId })));
   }
   /** The selected entry of the agent's own model catalog. */
   get selectedModel() {
@@ -346,7 +440,7 @@ export class AcpRuntime {
   async close() {
     this.closing = true;
     await this.serialize(this.agentId, async () => {
-      if (this.prompts > 0 && !this.failure) await this.connection!.agent.notify("session/cancel", { sessionId: this.sessionId! });
+      if (this.turnRunning && !this.failure) await this.connection!.agent.notify("session/cancel", { sessionId: this.sessionId! });
       await this.dispose();
     });
   }

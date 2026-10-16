@@ -96,6 +96,8 @@ interface TranscriptItemBase {
 
 export type WorkingTranscriptItem = TranscriptItemBase & {
   type: "working";
+  /** Names delegated work shown inside another turn, such as a subagent's run. */
+  title?: string;
   /** Initiating and steering entries whose activity belongs to this run. */
   inputEntryIds?: string[];
   startedAt: number;
