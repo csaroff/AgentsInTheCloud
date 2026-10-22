@@ -1,0 +1,97 @@
+name: Publish fork images
+
+# Builds this fork's System, app and default workspace images and moves `latest` to them, so
+# installations can use "Download update" to pick up whatever is on main.
+#
+# Upstream's release scripts need a second native Docker host over SSH for arm64. Our only
+# installation is amd64, so this publishes amd64 alone. To add arm64, append it to PLATFORMS
+# (QEMU is already set up; expect much slower builds).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-fork
+  cancel-in-progress: false
+
+env:
+  PLATFORMS: linux/amd64
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/workspace-helper/helper/go.mod
+          cache: false
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read where this checkout publishes
+        id: repo
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          bun -e '
+            const p = await import("./packages/shared/src/publishing.ts");
+            const v = await import("./packages/shared/src/system-version.ts");
+            console.log(`app=${p.appRepository}`);
+            console.log(`system=${p.systemRepository}`);
+            console.log(`system_version=${v.systemVersion}`);
+            console.log(`system_version_label=${v.systemVersionLabel}`);
+          ' >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      # The app requires a minimum System version, so publish System first.
+      - name: Publish System
+        env:
+          IMAGE: ${{ steps.repo.outputs.system }}
+          VERSION: ${{ steps.repo.outputs.system_version }}
+          VERSION_LABEL: ${{ steps.repo.outputs.system_version_label }}
+        run: |
+          set -euo pipefail
+          bun install --cwd images/system --frozen-lockfile
+          bun images/system/build.ts
+          docker buildx build --platform "$PLATFORMS" --provenance=false --push --progress plain \
+            --tag "$IMAGE:sha-$GITHUB_SHA" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "$VERSION_LABEL=$VERSION" \
+            --file images/system/Dockerfile images/system
+          digest=$(docker buildx imagetools inspect "$IMAGE:sha-$GITHUB_SHA" --format '{{json .Manifest}}' | jq -er .digest)
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$digest"
+          echo "System: $IMAGE:sha-$GITHUB_SHA ($digest)" >> "$GITHUB_STEP_SUMMARY"
+
+      # Upstream's build script generates the default workspace image, pins the app to its digest,
+      # builds the Go workspace helper for each platform, and publishes the app.
+      - name: Publish app and default workspace image
+        env:
+          GH_PACKAGE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.repo.outputs.app }}
+        run: |
+          set -euo pipefail
+          bun scripts/build-agents-in-the-cloud-image.ts \
+            --push --platform "$PLATFORMS" --progress plain \
+            --tag "sha-$GITHUB_SHA" --latest
+          echo "App: $IMAGE:sha-$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
