@@ -16,5 +16,7 @@ COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=tailscale /usr/local/bin/tailscale /usr/local/bin/tailscale
 COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscaled
 COPY .build/supervisor.js .build/client.js .build/design-system.css /opt/agents-in-the-cloud-system/
+# supervisor.js resolves ../proto/workspace_helper.proto from its own directory.
+COPY .build/proto/workspace_helper.proto /opt/proto/workspace_helper.proto
 ENTRYPOINT ["/usr/bin/tini", "--", "bun", "/opt/agents-in-the-cloud-system/supervisor.js"]
 CMD []

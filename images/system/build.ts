@@ -20,3 +20,6 @@ const client = await Bun.build({
 });
 if (!client.success) throw new AggregateError(client.logs);
 await Bun.write(`${out}/design-system.css`, await inlineDesignSystemCss());
+// The bundled workspace helper client loads its gRPC definition at runtime from
+// ../proto relative to the bundle, so it has to ship next to supervisor.js.
+await Bun.write(`${out}/proto/workspace_helper.proto`, Bun.file(new URL("../../packages/workspace-helper/proto/workspace_helper.proto", import.meta.url)));
